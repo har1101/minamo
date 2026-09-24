@@ -15,6 +15,11 @@ const passthrough: Serdes<string | undefined> = { serialize: async value => valu
 /** Lambda caps a STEP checkpoint payload at 256 KB (OperationUpdate `Payload`). */
 const STEP_PAYLOAD_LIMIT = 256 * 1024;
 
+/** Deterministic, so never retried: another attempt would redo the work (e.g. a model call) and fail the same way. */
+class StepTooLargeError extends Error {
+  override name = "StepTooLargeError";
+}
+
 /** An oversized result fails its step with a clear error, instead of failing the checkpoint after the work is done. */
 function encodeStep(name: string, value: unknown): string | undefined {
   if (value === undefined) return undefined;
@@ -23,7 +28,7 @@ function encodeStep(name: string, value: unknown): string | undefined {
   if (encoded.length * 3 > STEP_PAYLOAD_LIMIT) {
     const bytes = new TextEncoder().encode(encoded).length;
     if (bytes > STEP_PAYLOAD_LIMIT) {
-      throw new Error(`Step "${name}" result is ${bytes} bytes; Lambda durable functions record at most ${STEP_PAYLOAD_LIMIT} bytes per step`);
+      throw new StepTooLargeError(`Step "${name}" result is ${bytes} bytes; Lambda durable functions record at most ${STEP_PAYLOAD_LIMIT} bytes per step`);
     }
   }
   return encoded;
@@ -63,7 +68,8 @@ function retryStrategy({ when, maxAttempts, initialDelay, maxDelay, backoffRate 
     maxAttempts, ...(initialDelay && { initialDelay: seconds(initialDelay) }), ...(maxDelay && { maxDelay: seconds(maxDelay) }),
     ...(backoffRate !== undefined && { backoffRate }),
   });
-  return (error: Error, attempts: number) => (when?.(error) ?? true) ? strategy(error, attempts) : { shouldRetry: false };
+  return (error: Error, attempts: number) =>
+    !(error instanceof StepTooLargeError) && (when?.(error) ?? true) ? strategy(error, attempts) : { shouldRetry: false };
 }
 
 function seconds({ days = 0, hours = 0, minutes = 0, seconds = 0 }: Duration) {

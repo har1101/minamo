@@ -181,12 +181,13 @@ test("Lambda engine: a model call larger than the 256 KB step limit fails with a
     yield "x".repeat(200 * 1024);
     yield "é".repeat(30 * 1024); // 2 bytes each in UTF-8: over the limit in bytes, not in characters
   };
-  const handler = withDurableExecution(async (_event: unknown, context) => model(lambda(context), "model-1", call));
+  // Even a policy that retries every error must not redo a model call whose result can never be recorded.
+  const handler = withDurableExecution(async (_event: unknown, context) => model(lambda(context), "model-1", call, { retry: { maxAttempts: 3 } }));
   const execution = await new LocalDurableTestRunner({ handlerFunction: handler }).run({ payload: {} });
 
   assert.equal(execution.getStatus(), "FAILED");
   assert.match(execution.getError()?.errorMessage ?? "", /Step "model-1" result is \d+ bytes/);
-  assert.equal(calls, 1, "the size error is not retried as a transient error");
+  assert.equal(calls, 1, "a size error is never retried");
 });
 
 test("Lambda engine: a retry with an unset backoffRate keeps the default backoff", async t => {
