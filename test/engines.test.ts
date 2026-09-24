@@ -154,3 +154,18 @@ test("Lambda engine: the same agent suspends on a durable callback and replays o
   assert.deepEqual(scopes, ["/tools-1:a", "/tools-1:b", "/tools-1:c"], "scopes follow call order, not completion order");
 });
 
+test("Lambda engine: a failing signal publish fails the execution instead of retrying", async t => {
+  // skipTime turns the SDK's default retry delays into no-ops, so a regression shows up as extra attempts.
+  await LocalDurableTestRunner.setupTestEnvironment({ skipTime: true });
+  t.after(() => LocalDurableTestRunner.teardownTestEnvironment());
+  let published = 0;
+  const handler = withDurableExecution(async (_event: unknown, context) => lambda(context).signal("approval", async () => {
+    published++;
+    throw new Error("queue unavailable");
+  }));
+  const execution = await new LocalDurableTestRunner({ handlerFunction: handler }).run({ payload: {} });
+
+  assert.equal(execution.getStatus(), "FAILED");
+  assert.equal(published, 1);
+});
+

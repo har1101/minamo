@@ -84,7 +84,7 @@ The engine interface. Adapters implement it; you pass it around.
 | --- | --- |
 | `step(name, fn, { retry }?)` | Runs `fn` and records its result. Without `retry` it runs once; with `retry` it runs again for errors that `retry.when` accepts. On replay, returns the recorded result without running `fn`. `fn` must not use durable operations. |
 | `scope(name, fn)` | Runs `fn` with a child `Durable` that may use durable operations. A completed scope returns its recorded result. |
-| `signal(name, publish, { timeout }?)` | Suspends until someone completes the token that `publish` receives. On Lambda this is `waitForCallback`, and the function does not run while it waits. |
+| `signal(name, publish, { timeout }?)` | Suspends until someone completes the token that `publish` receives. `publish` runs once, like a step without `retry`. On Lambda this is `waitForCallback`, and the function does not run while it waits. |
 | `executionId` | Stable across replays and resumes. |
 
 Names must be unique within a scope and deterministic: build them from your input and from recorded results, never from time or randomness.

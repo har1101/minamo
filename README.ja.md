@@ -84,7 +84,7 @@ Amazon Bedrock の Converse を使い、そのままデプロイできる完全�
 | --- | --- |
 | `step(name, fn, { retry }?)` | `fn` を実行し、結果を記録します。`retry` がなければ 1 回だけ実行します。`retry` があれば、`retry.when` が受け入れたエラーのときに再実行します。リプレイでは `fn` を実行せず、記録した結果を返します。`fn` の中で durable なオペレーションを使ってはいけません。 |
 | `scope(name, fn)` | durable なオペレーションを使える子の `Durable` を渡して、`fn` を実行します。完了したスコープは、記録した結果を返します。 |
-| `signal(name, publish, { timeout }?)` | `publish` が受け取ったトークンを誰かが完了させるまで、サスペンドします。Lambda では `waitForCallback` です。待っている間、関数は動きません。 |
+| `signal(name, publish, { timeout }?)` | `publish` が受け取ったトークンを誰かが完了させるまで、サスペンドします。`publish` は、`retry` のない step と同じく 1 回だけ実行します。Lambda では `waitForCallback` です。待っている間、関数は動きません。 |
 | `executionId` | リプレイや再開をまたいで変わりません。 |
 
 名前は、スコープの中で一意かつ決定的にしてください。入力と記録済みの結果から作り、時刻や乱数は使いません。

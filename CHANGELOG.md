@@ -2,6 +2,10 @@
 
 All packages (`@minamojs/minamo`, `@minamojs/lambda-df`) share one version.
 
+## Unreleased
+
+- `@minamojs/lambda-df`: `signal` no longer retries a failing `publish` with the SDK's default retry strategy (6 attempts); it runs once, as on every engine (#1).
+
 ## 0.1.0-alpha.0 (2026-09-24)
 
 First alpha, published to npm with the `alpha` dist-tag.

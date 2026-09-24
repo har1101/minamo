@@ -29,7 +29,10 @@ export interface Durable {
   step<T>(name: string, fn: (info: StepInfo) => Promise<T>, options?: { retry?: Retry }): Promise<T>;
   /** Runs `fn` in a child scope that may use durable operations. A completed scope replays its recorded result. */
   scope<T>(name: string, fn: (child: Durable) => Promise<T>): Promise<T>;
-  /** Suspends until someone completes `token` with a JSON value. `publish` hands the token out; keep it idempotent. */
+  /**
+   * Suspends until someone completes `token` with a JSON value. `publish` hands the token out and, like a step
+   * without `retry`, runs once; keep it idempotent.
+   */
   signal<T>(name: string, publish: (token: string) => Promise<void>, options?: { timeout?: Duration }): Promise<T>;
 }
 
