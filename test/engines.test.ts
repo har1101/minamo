@@ -169,3 +169,20 @@ test("Lambda engine: a failing signal publish fails the execution instead of ret
   assert.equal(published, 1);
 });
 
+test("Lambda engine: a model call larger than the 256 KB step limit fails with a clear error", async t => {
+  await LocalDurableTestRunner.setupTestEnvironment({ skipTime: true });
+  t.after(() => LocalDurableTestRunner.teardownTestEnvironment());
+  let calls = 0;
+  const call = async function* () {
+    calls++;
+    yield "x".repeat(200 * 1024);
+    yield "é".repeat(30 * 1024); // 2 bytes each in UTF-8: over the limit in bytes, not in characters
+  };
+  const handler = withDurableExecution(async (_event: unknown, context) => model(lambda(context), "model-1", call));
+  const execution = await new LocalDurableTestRunner({ handlerFunction: handler }).run({ payload: {} });
+
+  assert.equal(execution.getStatus(), "FAILED");
+  assert.match(execution.getError()?.errorMessage ?? "", /Step "model-1" result is \d+ bytes/);
+  assert.equal(calls, 1, "the size error is not retried as a transient error");
+});
+
