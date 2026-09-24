@@ -1,6 +1,6 @@
 import { withDurableExecution } from "@aws/durable-execution-sdk-js";
-import { model, RetryableError, runTools, type Durable, type Tool, type ToolCall, type ToolResult } from "../src/index.js";
-import { lambda } from "../src/lambda.js";
+import { model, RetryableError, runTools, type Durable, type Tool, type ToolCall, type ToolResult } from "@minamojs/core";
+import { lambda } from "@minamojs/lambda-df";
 
 // Stand-ins for the reader's own code.
 type Message = { role: string; content: unknown };

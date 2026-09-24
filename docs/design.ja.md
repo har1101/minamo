@@ -1,13 +1,17 @@
 # minamo の設計
 
-最終更新: 2026-09-24。状態: 実験段階（`0.1.0-alpha.0` を npm の `alpha` タグで公開）。
+最終更新: 2026-09-24。状態: 実験段階（`0.1.0-alpha.0`）。
 
 ## 1. 何を作るか
 
 AI エージェントのループを durable にするための、依存ゼロの小さなコアです。モデル呼び出しとツール実行を durable にする部分だけを持ちます。
 
 - **対象のエンジン**: 最優先は AWS Lambda durable functions です。2 つ目の候補は Cloudflare Workflows です。それ以外のエンジンは、今のところ対象にしません。
-- **依存**: コアは npm の依存も `node:` の API も使いません。エンジンのアダプター（`minamo/lambda`）は、そのエンジンの SDK を任意の peer dependency として参照するだけです。Lambda の利用者はもともと SDK を入れているので、minamo が依存を増やすことにはなりません。
+- **依存**: `@minamojs/core` は npm の依存も `node:` の API も使いません。エンジンは別のパッケージ（`@minamojs/lambda-df`）で、そのエンジンの SDK を peer dependency として参照するだけです。Lambda の利用者はもともと SDK を入れているので、minamo が依存を増やすことにはなりません。
+- **パッケージ**: npm の org `@minamojs` の下に置きます。`@minamojs/core`（コアと、テスト用のエンジン `@minamojs/core/memory`）と、エンジンごとのパッケージ（`@minamojs/lambda-df`。後で `@minamojs/cloudflare`）に分けます。
+  - 名前の短い `minamo` は、npm が「既存の `minami`、`minio` と似すぎている」として 403 で拒否しました。
+  - `@minamo` のスコープは、別のユーザーが使っていました。
+  - `@minamojs/minamo` も候補に挙がりましたが、コアにアダプターを足す構成であることが名前で分かる `core` を選びました。`@mastra/core` や `@langchain/core` と同じ形です。
 - **フレームワーク**: AI SDK や Strands などのアダプターは作りません。エージェントのループは利用者のコードで 15 行ほどで書けます（README の例）。フレームワークとの組み合わせ方が必要になったら、例として示します。
 - **名前**: 水面（みなも）。ローマ字でも英語でも同じように読めます。「下で何が動いていても、上は静か」というイメージです。
 
@@ -16,9 +20,9 @@ Hono との対応:
 | Hono | minamo |
 | --- | --- |
 | Web 標準の `Request`/`Response` | `Durable` インターフェース（`step`、`scope`、`signal`）と、JSON + `Uint8Array` のコーデック |
-| ランタイムのアダプター（`hono/aws-lambda` など） | エンジンのアダプター（`minamo/lambda`、`minamo/memory`） |
+| ランタイムのアダプター（`hono/aws-lambda` など） | エンジンのパッケージ（`@minamojs/lambda-df`、`@minamojs/core/memory`） |
 | 依存ゼロの小さなコア | 依存ゼロで、`node:` の API を使わない。コアは minify 後 2 KB 未満（gzip 後で約 1 KB） |
-| `app.request()` でサーバーなしにテストできる | `minamo/memory` で AWS なしにテストでき、任意の地点でクラッシュさせられる |
+| `app.request()` でサーバーなしにテストできる | `@minamojs/core/memory` で AWS なしにテストでき、任意の地点でクラッシュさせられる |
 
 ### 既存のものとの違い（2026-09-24 時点）
 
@@ -32,9 +36,10 @@ Hono との対応:
 
 | ファイル | 内容 |
 | --- | --- |
-| `src/index.ts` | コア: `Durable`、`Retry`、コーデック（`stringify`、`parse`）、`model()`、`runTools()`、`RetryableError` |
-| `src/lambda.ts` | `lambda(context)`: Lambda の `DurableContext` を `Durable` に変換します |
-| `src/memory.ts` | `MemoryEngine`: テスト用のエンジン。名前をキーにしてリプレイし、クラッシュを注入でき、signal にも答えられます |
+| `packages/core/src/index.ts` | `@minamojs/core`: `Durable`、`Retry`、コーデック（`stringify`、`parse`）、`model()`、`runTools()`、`RetryableError` |
+| `packages/core/src/memory.ts` | `@minamojs/core/memory`: `MemoryEngine`。テスト用のエンジンで、名前をキーにしてリプレイし、クラッシュを注入でき、signal にも答えられます |
+| `packages/lambda-df/src/index.ts` | `@minamojs/lambda-df`: `lambda(context)`。Lambda の `DurableContext` を `Durable` に変換します |
+| `examples/lambda-bedrock` | Lambda と Bedrock Converse を使う、デプロイできる例です |
 | `test/engines.test.ts` | 同じエージェントを `memory` と Lambda（`LocalDurableTestRunner`）で動かします |
 | `test/agent.ts` | テスト用のエージェントのループと、台本どおりに動くモデル |
 | `test/readme-example.ts` | README の例の型チェック |
@@ -59,8 +64,8 @@ Hono との対応:
 
 ## 5. ロードマップ
 
-1. Trusted Publishing に切り替えます。`0.1.0-alpha.0` は手動で公開しました。以降は `release.yml` で、タグの push から公開します。
-2. 必要になったら、大きな値の S3 への退避（`minamo/s3`）を追加します。
+1. npm の Trusted Publishing に切り替えます。最初の `0.1.0-alpha.0` は手動で公開し、以降は `release.yml` でタグの push から公開します。
+2. 必要になったら、大きな値の S3 への退避（`@minamojs/s3` など）を追加します。
 3. 余力があれば、Cloudflare Workflows のアダプターを作ります。
 
 ## 6. 未決事項
@@ -72,7 +77,7 @@ Hono との対応:
 ## 7. 名前を決めた経緯
 
 - ローマ字でも英語でも言いやすく、日本語として意味があり、プロダクトの機能に縛られすぎない名前を探しました。
-- npm で空いていることは、2026-09-24 に registry で確認しました。
+- 名前の候補が npm で空いているかは、2026-09-24 に registry で確認しました。ただし、公開時の類似名チェックで `minamo` は拒否されたため、パッケージは org のスコープの下に置いています（1 章）。
 - 見送った候補:
   - `tsugu`（継ぐ）: 意図が伝わりにくく、覚えにくいため。
   - `shiori`（栞）: 星 11,651 の go-shiori が有名で、npm の名前も使われているため。

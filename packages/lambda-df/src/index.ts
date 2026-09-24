@@ -1,5 +1,5 @@
 import { createRetryStrategy, type DurableContext, type Serdes } from "@aws/durable-execution-sdk-js";
-import { parse, stringify, type Duration, type Durable, type Retry, type StepInfo } from "./index.js";
+import { parse, stringify, type Duration, type Durable, type Retry, type StepInfo } from "@minamojs/core";
 
 /** Binary-safe JSON for every checkpoint the core writes. */
 function serdes<T>(): Serdes<T> {

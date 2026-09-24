@@ -13,22 +13,27 @@
 
 - **依存ゼロ**: コアは Web 標準の API だけを使います。`node:` の import、`Buffer`、`AsyncLocalStorage` は使いません。minify 後で 2 KB 未満、gzip 後で約 1 KB です。
 - **ループとモデルは自分で持つ**: minamo はメッセージの形式を決めません。モデルのストリームが返すものを、そのまま記録します。
-- **エンジンはアダプター**: コアは 3 つのオペレーションだけの `Durable` インターフェースを使います。`minamo/lambda` は、Lambda の durable execution SDK でこれを実装します。2 つ目のエンジンの候補は Cloudflare Workflows です。
+- **エンジンはアダプター**: コアは 3 つのオペレーションだけの `Durable` インターフェースを使います。`@minamojs/lambda-df` は、Lambda の durable execution SDK でこれを実装します。2 つ目のエンジンの候補は Cloudflare Workflows です。
 
 ## インストール
 
 ```bash
-npm install minamo@alpha @aws/durable-execution-sdk-js
+npm install @minamojs/core@alpha @minamojs/lambda-df@alpha @aws/durable-execution-sdk-js
 ```
 
-Node.js 22 以上が必要です。`@aws/durable-execution-sdk-js` は `minamo/lambda` を使うときだけ必要です。
+Node.js 22 以上が必要です。
+
+| パッケージ | 内容 |
+| --- | --- |
+| `@minamojs/core` | コア（`Durable`、`model`、`runTools`、`Retry`、コーデック）と、テスト用のエンジン `@minamojs/core/memory`。依存はありません |
+| `@minamojs/lambda-df` | AWS Lambda durable functions のエンジン。peer dependency は `@aws/durable-execution-sdk-js` 2.x です |
 
 ## 例
 
 ```ts
 import { withDurableExecution } from "@aws/durable-execution-sdk-js";
-import { model, RetryableError, runTools, type Durable, type Tool } from "minamo";
-import { lambda } from "minamo/lambda";
+import { model, RetryableError, runTools, type Durable, type Tool } from "@minamojs/core";
+import { lambda } from "@minamojs/lambda-df";
 
 const tools: Record<string, Tool> = {
   weather: {
@@ -106,8 +111,8 @@ Amazon Bedrock の Converse を使い、そのままデプロイできる完全�
 
 | import | エンジン | 状態 |
 | --- | --- | --- |
-| `minamo/lambda` | AWS Lambda durable functions（`@aws/durable-execution-sdk-js` 2.x。任意の peer dependency） | デプロイした Lambda と `LocalDurableTestRunner` で動作確認済み |
-| `minamo/memory` | テスト用のメモリ上のエンジン | 動作確認済み |
+| `@minamojs/lambda-df` | AWS Lambda durable functions（`@aws/durable-execution-sdk-js` 2.x） | デプロイした Lambda と `LocalDurableTestRunner` で動作確認済み |
+| `@minamojs/core/memory` | テスト用のメモリ上のエンジン | 動作確認済み |
 | — | Cloudflare Workflows | 候補 |
 
 ## AWS なしでテストする
@@ -115,7 +120,7 @@ Amazon Bedrock の Converse を使い、そのままデプロイできる完全�
 `MemoryEngine` は、本物のエンジンと同じようにリプレイします。呼び出しのたびにハンドラーを最初から実行し、記録済みの結果を返します。`crash` を使うと、オペレーションを記録した直後に呼び出しを止められるので、あらゆる地点からの復旧をテストできます。
 
 ```ts
-import { MemoryEngine } from "minamo/memory";
+import { MemoryEngine } from "@minamojs/core/memory";
 
 const engine = new MemoryEngine({ crash: () => true }); // 記録のたびにクラッシュさせる
 const running = engine.run((durable, prompt: string) => agent(durable, prompt), "hello");

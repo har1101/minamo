@@ -4,8 +4,8 @@ import {
   type ContentBlock, type ConverseStreamOutput, type Message, type Tool as BedrockTool,
 } from "@aws-sdk/client-bedrock-runtime";
 import { withDurableExecution, type DurableContext } from "@aws/durable-execution-sdk-js";
-import { model, RetryableError, runTools, type Durable, type Tool, type ToolResult } from "minamo";
-import { lambda } from "minamo/lambda";
+import { model, RetryableError, runTools, type Durable, type Tool, type ToolResult } from "@minamojs/core";
+import { lambda } from "@minamojs/lambda-df";
 
 const bedrock = new BedrockRuntimeClient({ maxAttempts: 1 }); // minamo retries the whole model step instead
 const MODEL_ID = process.env.BEDROCK_MODEL_ID ?? "us.anthropic.claude-haiku-4-5-20251001-v1:0";

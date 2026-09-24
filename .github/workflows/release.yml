@@ -1,8 +1,8 @@
 name: Release
 
-# On a version tag (v1.2.3 or v1.2.3-alpha.1): test, pack, attach the tarball to a GitHub release, and publish to
-# npm through trusted publishing (OIDC, no token). A prerelease goes to the dist-tag named by its identifier
-# (alpha, beta, rc); a release goes to `latest`.
+# On a version tag (v1.2.3 or v1.2.3-alpha.1): test, pack every package, attach the tarballs to a GitHub release,
+# and publish them to npm through trusted publishing (OIDC, no token). A prerelease goes to the dist-tag named by its
+# identifier (alpha, beta, rc); a release goes to `latest`. Versions already on npm are skipped, so a rerun is safe.
 on:
   push:
     tags: ["v*"]
@@ -24,16 +24,21 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: npm install -g npm@^11.5.1 # trusted publishing needs npm 11.5.1 or later
       - run: npm ci
-      - name: Check tag matches package.json version
-        run: test "v$(node -p "require('./package.json').version")" = "${GITHUB_REF_NAME}"
+      - name: Check tag matches every package version
+        run: |
+          for package in packages/*/; do
+            test "v$(node -p "require('./${package}package.json').version")" = "${GITHUB_REF_NAME}"
+          done
+      - run: npm run build
       - run: npm run typecheck
       - run: npm test
-      - run: npm pack # prepack builds dist/
+      - run: npm pack -w @minamojs/core -w @minamojs/lambda-df
       - name: Create GitHub release
         run: |
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then exit 0; fi
           prerelease=()
           if [[ "${GITHUB_REF_NAME}" == *-* ]]; then prerelease=(--prerelease); fi
-          gh release create "${GITHUB_REF_NAME}" minamo-*.tgz --title "${GITHUB_REF_NAME}" --generate-notes "${prerelease[@]}"
+          gh release create "${GITHUB_REF_NAME}" minamojs-*.tgz --title "${GITHUB_REF_NAME}" --generate-notes "${prerelease[@]}"
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Publish to npm
@@ -41,4 +46,7 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           tag=latest
           if [[ "${version}" == *-* ]]; then prerelease="${version#*-}"; tag="${prerelease%%.*}"; fi
-          npm publish minamo-*.tgz --access public --tag "${tag}"
+          for name in @minamojs/core @minamojs/lambda-df; do
+            if npm view "${name}@${version}" version >/dev/null 2>&1; then echo "${name}@${version} is already published"; continue; fi
+            npm publish "minamojs-${name#@minamojs/}-${version}.tgz" --access public --tag "${tag}"
+          done

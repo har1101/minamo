@@ -1,45 +1,20 @@
 {
-  "name": "minamo",
-  "version": "0.1.0-alpha.0",
-  "description": "Tiny, dependency-free core for durable AI agent loops on durable execution engines such as AWS Lambda durable functions",
+  "name": "minamo-monorepo",
+  "private": true,
   "type": "module",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    },
-    "./lambda": {
-      "types": "./dist/lambda.d.ts",
-      "import": "./dist/lambda.js"
-    },
-    "./memory": {
-      "types": "./dist/memory.d.ts",
-      "import": "./dist/memory.js"
-    }
-  },
-  "files": [
-    "dist",
-    "README.md",
-    "README.ja.md",
-    "LICENSE"
+  "workspaces": [
+    "packages/core",
+    "packages/lambda-df",
+    "examples/lambda-bedrock"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit",
+    "build": "npm run build -w @minamojs/core -w @minamojs/lambda-df",
+    "typecheck": "tsc --noEmit && npm run typecheck -w minamo-example-lambda-bedrock",
     "test": "node --import tsx --test test/*.test.ts",
-    "prepack": "npm run build"
+    "pack:check": "npm pack --dry-run -w @minamojs/core -w @minamojs/lambda-df"
   },
   "engines": {
     "node": ">=22"
-  },
-  "sideEffects": false,
-  "peerDependencies": {
-    "@aws/durable-execution-sdk-js": ">=2.4.0 <3"
-  },
-  "peerDependenciesMeta": {
-    "@aws/durable-execution-sdk-js": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@aws/durable-execution-sdk-js": "^2.4.0",
@@ -47,21 +22,5 @@
     "@types/node": "^26.6.2",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/har1101/minamo.git"
-  },
-  "homepage": "https://github.com/har1101/minamo#readme",
-  "bugs": "https://github.com/har1101/minamo/issues",
-  "keywords": [
-    "ai-agents",
-    "durable-execution",
-    "durable-functions",
-    "aws-lambda",
-    "agent-loop",
-    "web-standards"
-  ],
-  "author": "har1101",
-  "license": "MIT"
+  }
 }

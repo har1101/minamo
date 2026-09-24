@@ -13,22 +13,27 @@ Write your agent loop as plain TypeScript. minamo records each model call and ea
 
 - **No dependencies.** The core uses only Web standard APIs: no `node:` imports, no `Buffer`, no `AsyncLocalStorage`. It is under 2 KB minified and about 1 KB gzipped.
 - **Bring your own loop and model.** minamo does not define a message format. It records whatever your model stream yields.
-- **Engine adapters, not engine lock-in.** The core talks to a three-operation `Durable` interface. `minamo/lambda` implements it with the Lambda durable execution SDK. Cloudflare Workflows is the candidate for a second engine.
+- **Engine adapters, not engine lock-in.** The core talks to a three-operation `Durable` interface. `@minamojs/lambda-df` implements it with the Lambda durable execution SDK. Cloudflare Workflows is the candidate for a second engine.
 
 ## Install
 
 ```bash
-npm install minamo@alpha @aws/durable-execution-sdk-js
+npm install @minamojs/core@alpha @minamojs/lambda-df@alpha @aws/durable-execution-sdk-js
 ```
 
-Requires Node.js 22 or later. `@aws/durable-execution-sdk-js` is needed only for `minamo/lambda`.
+Requires Node.js 22 or later.
+
+| Package | Contents |
+| --- | --- |
+| `@minamojs/core` | The core (`Durable`, `model`, `runTools`, `Retry`, codec) and `@minamojs/core/memory`, an engine for tests. No dependencies. |
+| `@minamojs/lambda-df` | The AWS Lambda durable functions engine. Peer dependency: `@aws/durable-execution-sdk-js` 2.x. |
 
 ## Example
 
 ```ts
 import { withDurableExecution } from "@aws/durable-execution-sdk-js";
-import { model, RetryableError, runTools, type Durable, type Tool } from "minamo";
-import { lambda } from "minamo/lambda";
+import { model, RetryableError, runTools, type Durable, type Tool } from "@minamojs/core";
+import { lambda } from "@minamojs/lambda-df";
 
 const tools: Record<string, Tool> = {
   weather: {
@@ -106,8 +111,8 @@ Recorded values are JSON plus `Uint8Array`, which is stored as base64. Engines a
 
 | Import | Engine | Status |
 | --- | --- | --- |
-| `minamo/lambda` | AWS Lambda durable functions (`@aws/durable-execution-sdk-js` 2.x, an optional peer dependency) | Works, on deployed Lambda and with `LocalDurableTestRunner` |
-| `minamo/memory` | In-memory engine for tests | Works |
+| `@minamojs/lambda-df` | AWS Lambda durable functions (`@aws/durable-execution-sdk-js` 2.x) | Works, on deployed Lambda and with `LocalDurableTestRunner` |
+| `@minamojs/core/memory` | In-memory engine for tests | Works |
 | — | Cloudflare Workflows | Candidate |
 
 ## Testing without AWS
@@ -115,7 +120,7 @@ Recorded values are JSON plus `Uint8Array`, which is stored as base64. Engines a
 `MemoryEngine` replays like a real engine: each invocation runs your handler from the top and returns recorded results. `crash` stops an invocation right after an operation is recorded, so you can test recovery at every point:
 
 ```ts
-import { MemoryEngine } from "minamo/memory";
+import { MemoryEngine } from "@minamojs/core/memory";
 
 const engine = new MemoryEngine({ crash: () => true }); // crash after every recorded operation
 const running = engine.run((durable, prompt: string) => agent(durable, prompt), "hello");

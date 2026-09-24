@@ -14,8 +14,9 @@ A customer-support agent that runs on AWS Lambda durable functions and calls Ama
 ## Deploy and run
 
 ```bash
-npm install
-AWS_REGION=us-east-1 npm run deploy    # builds minamo and the handler, then deploys the stack `minamo-example`
+npm install                            # at the repository root (npm workspaces)
+cd examples/lambda-bedrock
+AWS_REGION=us-east-1 npm run deploy    # builds the minamo packages and the handler, then deploys the stack `minamo-example`
 AWS_REGION=us-east-1 npm run smoke     # starts an execution, approves the refund, prints the result and the history
 AWS_REGION=us-east-1 npm run smoke -- reject
 ```

@@ -1,0 +1,45 @@
+{
+  "name": "@minamojs/core",
+  "version": "0.1.0-alpha.0",
+  "description": "Tiny, dependency-free core for durable AI agent loops on durable execution engines such as AWS Lambda durable functions",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./memory": {
+      "types": "./dist/memory.d.ts",
+      "import": "./dist/memory.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/har1101/minamo.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/har1101/minamo#readme",
+  "bugs": "https://github.com/har1101/minamo/issues",
+  "keywords": [
+    "ai-agents",
+    "durable-execution",
+    "durable-functions",
+    "agent-loop",
+    "web-standards"
+  ],
+  "author": "har1101",
+  "license": "MIT"
+}
