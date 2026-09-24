@@ -84,7 +84,7 @@ The engine interface. Adapters implement it; you pass it around.
 | --- | --- |
 | `step(name, fn, { retry }?)` | Runs `fn` and records its result. Without `retry` it runs once; with `retry` it runs again for errors that `retry.when` accepts. On replay, returns the recorded result without running `fn`. `fn` must not use durable operations. |
 | `scope(name, fn)` | Runs `fn` with a child `Durable` that may use durable operations. A completed scope returns its recorded result. |
-| `signal(name, publish, { timeout }?)` | Suspends until someone completes the token that `publish` receives. On Lambda this is `waitForCallback`, and the function does not run while it waits. |
+| `signal(name, publish, { timeout }?)` | Suspends until someone completes the token that `publish` receives. `publish` runs once, like a step without `retry`. On Lambda this is `waitForCallback`, and the function does not run while it waits. |
 | `executionId` | Stable across replays and resumes. |
 
 Names must be unique within a scope and deterministic: build them from your input and from recorded results, never from time or randomness.
@@ -102,6 +102,7 @@ Runs one turn's tool calls concurrently and returns their results in call order.
 - Throw `RetryableError` to retry a plain tool's step (default: 3 attempts with exponential backoff). Any other error is recorded once as an error result that the model sees. Set `retry` on a tool to change this.
 - Unknown tools, exhausted retries, and failed workflows also become error results, so the model can react.
 - Every tool receives `idempotencyKey` (`<executionId>#<call id>`), which stays the same on every retry, replay, and resume. Pass it to external APIs.
+- Every tool also receives `call`, the `ToolCall` it runs, for example to key progress events by `call.id`.
 
 ### Values
 
@@ -132,7 +133,7 @@ const result = await running;
 
 - **At-least-once.** A tool can run again if the process stops after its side effect and before its result is recorded. Use `idempotencyKey` with external APIs.
 - **Determinism.** Code outside steps runs again on every replay. It must make the same durable calls in the same order.
-- **Lambda quotas.** An execution can have up to 3,000 operations and up to 100 MB of checkpoint data in total. Split long conversations across executions. Invoke a published version or alias, so that replays run the same code.
+- **Lambda quotas.** An execution can have up to 3,000 operations and up to 100 MB of checkpoint data in total. Each step result, such as the events of one model call, can be up to 256 KB; `@minamojs/lambda-df` fails a larger step with an error that names it. Split long conversations across executions. Invoke a published version or alias, so that replays run the same code.
 
 ## Design
 

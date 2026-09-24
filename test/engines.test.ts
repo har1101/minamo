@@ -15,7 +15,7 @@ const EXPECTED = 'Done: a="SLOW", b="FAST", c={"status":"sent","amount":100}';
 /** Turn 1 asks for a slow lookup, a fast lookup (finishes first), and a transfer that needs human approval. */
 function scenario() {
   const token = Promise.withResolvers<string>();
-  const log = { runs: [] as string[], keys: {} as Record<string, string[]>, executed: 0, published: 0, token: token.promise };
+  const log = { runs: [] as string[], keys: {} as Record<string, string[]>, callIds: {} as Record<string, string>, executed: 0, published: 0, token: token.promise };
   const { provider, counter } = scripted([
     { id: "a", name: "lookup", input: { q: "slow", delayMs: 30 } },
     { id: "b", name: "lookup", input: { q: "fast", delayMs: 1 } },
@@ -25,12 +25,14 @@ function scenario() {
     run: async ({ q, delayMs }, ctx) => {
       log.runs.push(q);
       (log.keys[q] ??= []).push(ctx.idempotencyKey);
+      log.callIds[q] = ctx.call.id;
       await sleep(delayMs);
       return q.toUpperCase();
     },
   };
   const transfer: Tool<{ amount: number }> = {
-    workflow: async ({ amount }, { durable }) => {
+    workflow: async ({ amount }, { durable, call }) => {
+      log.callIds.transfer = call.id;
       const answer = await durable.signal<{ approved: boolean }>("approval", async t => {
         log.published++;
         token.resolve(t);
@@ -57,6 +59,7 @@ test("memory engine: suspends for approval and resumes without repeating work", 
   assert.deepEqual(log.runs, ["slow", "fast"], "each lookup ran once");
   assert.equal(log.executed, 1);
   assert.equal(log.published, 1);
+  assert.deepEqual(log.callIds, { slow: "a", fast: "b", transfer: "c" }, "run and workflow tools see their own call");
   assert.equal(engine.invocations, 2);
 });
 
@@ -152,5 +155,56 @@ test("Lambda engine: the same agent suspends on a durable callback and replays o
   }
   const scopes = tree.filter(entry => entry.startsWith("/tools-1:"));
   assert.deepEqual(scopes, ["/tools-1:a", "/tools-1:b", "/tools-1:c"], "scopes follow call order, not completion order");
+});
+
+test("Lambda engine: a failing signal publish fails the execution instead of retrying", async t => {
+  // skipTime turns the SDK's default retry delays into no-ops, so a regression shows up as extra attempts.
+  await LocalDurableTestRunner.setupTestEnvironment({ skipTime: true });
+  t.after(() => LocalDurableTestRunner.teardownTestEnvironment());
+  let published = 0;
+  const handler = withDurableExecution(async (_event: unknown, context) => lambda(context).signal("approval", async () => {
+    published++;
+    throw new Error("queue unavailable");
+  }));
+  const execution = await new LocalDurableTestRunner({ handlerFunction: handler }).run({ payload: {} });
+
+  assert.equal(execution.getStatus(), "FAILED");
+  assert.equal(published, 1);
+});
+
+test("Lambda engine: a model call larger than the 256 KB step limit fails with a clear error", async t => {
+  await LocalDurableTestRunner.setupTestEnvironment({ skipTime: true });
+  t.after(() => LocalDurableTestRunner.teardownTestEnvironment());
+  let calls = 0;
+  const call = async function* () {
+    calls++;
+    yield "x".repeat(200 * 1024);
+    yield "é".repeat(30 * 1024); // 2 bytes each in UTF-8: over the limit in bytes, not in characters
+  };
+  // Even a policy that retries every error must not redo a model call whose result can never be recorded.
+  const handler = withDurableExecution(async (_event: unknown, context) => model(lambda(context), "model-1", call, { retry: { maxAttempts: 3 } }));
+  const execution = await new LocalDurableTestRunner({ handlerFunction: handler }).run({ payload: {} });
+
+  assert.equal(execution.getStatus(), "FAILED");
+  assert.match(execution.getError()?.errorMessage ?? "", /Step "model-1" result is \d+ bytes/);
+  assert.equal(calls, 1, "a size error is never retried");
+});
+
+test("Lambda engine: a retry with an unset backoffRate keeps the default backoff", async t => {
+  await LocalDurableTestRunner.setupTestEnvironment({ skipTime: true });
+  t.after(() => LocalDurableTestRunner.teardownTestEnvironment());
+  const options: { rate?: number } = {};
+  let attempts = 0;
+  const handler = withDurableExecution(async (_event: unknown, context) => lambda(context).step("flaky", async () => {
+    if (++attempts < 3) throw new Error("503 from upstream");
+    return "ok";
+  }, { retry: { maxAttempts: 3, backoffRate: options.rate } }));
+  const execution = await new LocalDurableTestRunner({ handlerFunction: handler }).run({ payload: {} });
+
+  const delays = execution.getHistoryEvents().flatMap(event => event.StepFailedDetails?.RetryDetails?.NextAttemptDelaySeconds ?? []);
+  assert.equal(execution.getStatus(), "SUCCEEDED");
+  assert.equal(attempts, 3);
+  assert.equal(delays.length, 2);
+  assert.ok(delays.every(Number.isFinite), `finite retry delays, got ${delays}`);
 });
 
