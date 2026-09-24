@@ -1,6 +1,6 @@
 {
   "name": "@minamojs/minamo",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "description": "Tiny, dependency-free core for durable AI agent loops on durable execution engines such as AWS Lambda durable functions",
   "type": "module",
   "exports": {

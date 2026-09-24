@@ -2,7 +2,7 @@
 
 All packages (`@minamojs/minamo`, `@minamojs/lambda-df`) share one version.
 
-## Unreleased
+## 0.1.0-alpha.1 (2026-09-25)
 
 - `@minamojs/lambda-df`: `signal` no longer retries a failing `publish` with the SDK's default retry strategy (6 attempts); it runs once, as on every engine (#1).
 - `@minamojs/lambda-df`: a step result over Lambda's 256 KB STEP checkpoint limit (for example, a long `model()` stream) now fails that step with an error naming the step and its size, instead of failing at checkpoint time (#2).
