@@ -9,11 +9,19 @@ A tiny, dependency-free core for durable AI agent loops on [AWS Lambda durable f
 Write your agent loop as plain TypeScript. minamo records each model call and each tool call as a durable operation, so a crash, a redeploy, or a week-long wait for human approval resumes from the last completed call instead of starting over and paying for the same tokens again.
 
 > [!WARNING]
-> Experimental (`0.0.0`). Not published to npm yet. The API will change.
+> Experimental alpha (`0.1.0-alpha.0`). The API will change.
 
 - **No dependencies.** The core uses only Web standard APIs: no `node:` imports, no `Buffer`, no `AsyncLocalStorage`. It is under 2 KB minified and about 1 KB gzipped.
 - **Bring your own loop and model.** minamo does not define a message format. It records whatever your model stream yields.
 - **Engine adapters, not engine lock-in.** The core talks to a three-operation `Durable` interface. `minamo/lambda` implements it with the Lambda durable execution SDK. Cloudflare Workflows is the candidate for a second engine.
+
+## Install
+
+```bash
+npm install minamo@alpha @aws/durable-execution-sdk-js
+```
+
+Requires Node.js 22 or later. `@aws/durable-execution-sdk-js` is needed only for `minamo/lambda`.
 
 ## Example
 

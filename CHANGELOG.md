@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.1.0-alpha.0 (2026-09-24)
+
+First alpha, published to npm with the `alpha` dist-tag.
+
 
 - Core: `Durable` interface (`step`, `scope`, `signal`), declarative `Retry`, a JSON codec that keeps `Uint8Array`, `model()` for one durable step per model call, and `runTools()` for concurrent tool calls with a deterministic journal.
 - `minamo/lambda`: adapter for AWS Lambda durable functions.

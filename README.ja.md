@@ -9,11 +9,19 @@
 エージェントのループは、普通の TypeScript で書きます。minamo は、モデル呼び出しとツール呼び出しを 1 回ずつ durable なオペレーションとして記録します。そのため、クラッシュしても、再デプロイしても、人の承認を 1 週間待っても、最初からやり直さずに最後に完了した呼び出しから再開します。同じトークンに二重に払うこともありません。
 
 > [!WARNING]
-> 実験段階（`0.0.0`）です。npm にはまだ公開していません。API は変わります。
+> 実験段階の alpha 版（`0.1.0-alpha.0`）です。API は変わります。
 
 - **依存ゼロ**: コアは Web 標準の API だけを使います。`node:` の import、`Buffer`、`AsyncLocalStorage` は使いません。minify 後で 2 KB 未満、gzip 後で約 1 KB です。
 - **ループとモデルは自分で持つ**: minamo はメッセージの形式を決めません。モデルのストリームが返すものを、そのまま記録します。
 - **エンジンはアダプター**: コアは 3 つのオペレーションだけの `Durable` インターフェースを使います。`minamo/lambda` は、Lambda の durable execution SDK でこれを実装します。2 つ目のエンジンの候補は Cloudflare Workflows です。
+
+## インストール
+
+```bash
+npm install minamo@alpha @aws/durable-execution-sdk-js
+```
+
+Node.js 22 以上が必要です。`@aws/durable-execution-sdk-js` は `minamo/lambda` を使うときだけ必要です。
 
 ## 例
 

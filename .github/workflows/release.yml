@@ -1,0 +1,44 @@
+name: Release
+
+# On a version tag (v1.2.3 or v1.2.3-alpha.1): test, pack, attach the tarball to a GitHub release, and publish to
+# npm through trusted publishing (OIDC, no token). A prerelease goes to the dist-tag named by its identifier
+# (alpha, beta, rc); a release goes to `latest`.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # create the GitHub release
+  id-token: write # npm trusted publishing and provenance
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - run: npm install -g npm@^11.5.1 # trusted publishing needs npm 11.5.1 or later
+      - run: npm ci
+      - name: Check tag matches package.json version
+        run: test "v$(node -p "require('./package.json').version")" = "${GITHUB_REF_NAME}"
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm pack # prepack builds dist/
+      - name: Create GitHub release
+        run: |
+          prerelease=()
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then prerelease=(--prerelease); fi
+          gh release create "${GITHUB_REF_NAME}" minamo-*.tgz --title "${GITHUB_REF_NAME}" --generate-notes "${prerelease[@]}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Publish to npm
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          tag=latest
+          if [[ "${version}" == *-* ]]; then prerelease="${version#*-}"; tag="${prerelease%%.*}"; fi
+          npm publish minamo-*.tgz --access public --tag "${tag}"
