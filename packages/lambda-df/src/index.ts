@@ -37,7 +37,8 @@ export function lambda(context: DurableContext): Durable {
   const executionId = context.executionContext.durableExecutionArn;
   return {
     executionId,
-    // DurablePromise is lazy; Promise.resolve starts it now, so operations start in call order.
+    // SDK operations take their ID and start when called, so the core calling them in a fixed order keeps IDs stable.
+    // Promise.resolve only turns the SDK's DurablePromise thenable into a real Promise, as `Durable` promises.
     step<T>(name: string, fn: (info: StepInfo) => Promise<T>, options?: { retry?: Retry }) {
       return Promise.resolve(context.step(name, async step => encodeStep(name, await fn({ attempt: step.attempt })), {
         serdes: passthrough, retryStrategy: options?.retry ? retryStrategy(options.retry) : noRetry,
