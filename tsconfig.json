@@ -4,8 +4,8 @@
     "noEmit": true,
     // Type-check and test against the sources, so no build is needed first.
     "paths": {
-      "@minamojs/core": ["./packages/core/src/index.ts"],
-      "@minamojs/core/memory": ["./packages/core/src/memory.ts"],
+      "@minamojs/minamo": ["./packages/core/src/index.ts"],
+      "@minamojs/minamo/memory": ["./packages/core/src/memory.ts"],
       "@minamojs/lambda-df": ["./packages/lambda-df/src/index.ts"]
     }
   },

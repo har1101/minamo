@@ -1,4 +1,4 @@
-import { model, runTools, type Durable, type Tool, type ToolCall, type ToolResult } from "@minamojs/core";
+import { model, runTools, type Durable, type Tool, type ToolCall, type ToolResult } from "@minamojs/minamo";
 
 export type Message = { role: "user" | "assistant" | "tool"; text?: string; calls?: ToolCall[]; results?: ToolResult[] };
 export type ModelEvent = { type: "text"; text: string } | { type: "tool_call"; call: ToolCall };

@@ -8,10 +8,10 @@
     "examples/lambda-bedrock"
   ],
   "scripts": {
-    "build": "npm run build -w @minamojs/core -w @minamojs/lambda-df",
+    "build": "npm run build -w @minamojs/minamo -w @minamojs/lambda-df",
     "typecheck": "tsc --noEmit && npm run typecheck -w minamo-example-lambda-bedrock",
     "test": "node --import tsx --test test/*.test.ts",
-    "pack:check": "npm pack --dry-run -w @minamojs/core -w @minamojs/lambda-df"
+    "pack:check": "npm pack --dry-run -w @minamojs/minamo -w @minamojs/lambda-df"
   },
   "engines": {
     "node": ">=22"

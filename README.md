@@ -18,21 +18,21 @@ Write your agent loop as plain TypeScript. minamo records each model call and ea
 ## Install
 
 ```bash
-npm install @minamojs/core@alpha @minamojs/lambda-df@alpha @aws/durable-execution-sdk-js
+npm install @minamojs/minamo@alpha @minamojs/lambda-df@alpha @aws/durable-execution-sdk-js
 ```
 
 Requires Node.js 22 or later.
 
 | Package | Contents |
 | --- | --- |
-| `@minamojs/core` | The core (`Durable`, `model`, `runTools`, `Retry`, codec) and `@minamojs/core/memory`, an engine for tests. No dependencies. |
+| `@minamojs/minamo` | The core (`Durable`, `model`, `runTools`, `Retry`, codec) and `@minamojs/minamo/memory`, an engine for tests. No dependencies. |
 | `@minamojs/lambda-df` | The AWS Lambda durable functions engine. Peer dependency: `@aws/durable-execution-sdk-js` 2.x. |
 
 ## Example
 
 ```ts
 import { withDurableExecution } from "@aws/durable-execution-sdk-js";
-import { model, RetryableError, runTools, type Durable, type Tool } from "@minamojs/core";
+import { model, RetryableError, runTools, type Durable, type Tool } from "@minamojs/minamo";
 import { lambda } from "@minamojs/lambda-df";
 
 const tools: Record<string, Tool> = {
@@ -112,7 +112,7 @@ Recorded values are JSON plus `Uint8Array`, which is stored as base64. Engines a
 | Import | Engine | Status |
 | --- | --- | --- |
 | `@minamojs/lambda-df` | AWS Lambda durable functions (`@aws/durable-execution-sdk-js` 2.x) | Works, on deployed Lambda and with `LocalDurableTestRunner` |
-| `@minamojs/core/memory` | In-memory engine for tests | Works |
+| `@minamojs/minamo/memory` | In-memory engine for tests | Works |
 | — | Cloudflare Workflows | Candidate |
 
 ## Testing without AWS
@@ -120,7 +120,7 @@ Recorded values are JSON plus `Uint8Array`, which is stored as base64. Engines a
 `MemoryEngine` replays like a real engine: each invocation runs your handler from the top and returns recorded results. `crash` stops an invocation right after an operation is recorded, so you can test recovery at every point:
 
 ```ts
-import { MemoryEngine } from "@minamojs/core/memory";
+import { MemoryEngine } from "@minamojs/minamo/memory";
 
 const engine = new MemoryEngine({ crash: () => true }); // crash after every recorded operation
 const running = engine.run((durable, prompt: string) => agent(durable, prompt), "hello");

@@ -7,11 +7,11 @@
 AI エージェントのループを durable にするための、依存ゼロの小さなコアです。モデル呼び出しとツール実行を durable にする部分だけを持ちます。
 
 - **対象のエンジン**: 最優先は AWS Lambda durable functions です。2 つ目の候補は Cloudflare Workflows です。それ以外のエンジンは、今のところ対象にしません。
-- **依存**: `@minamojs/core` は npm の依存も `node:` の API も使いません。エンジンは別のパッケージ（`@minamojs/lambda-df`）で、そのエンジンの SDK を peer dependency として参照するだけです。Lambda の利用者はもともと SDK を入れているので、minamo が依存を増やすことにはなりません。
-- **パッケージ**: npm の org `@minamojs` の下に置きます。`@minamojs/core`（コアと、テスト用のエンジン `@minamojs/core/memory`）と、エンジンごとのパッケージ（`@minamojs/lambda-df`。後で `@minamojs/cloudflare`）に分けます。
+- **依存**: `@minamojs/minamo` は npm の依存も `node:` の API も使いません。エンジンは別のパッケージ（`@minamojs/lambda-df`）で、そのエンジンの SDK を peer dependency として参照するだけです。Lambda の利用者はもともと SDK を入れているので、minamo が依存を増やすことにはなりません。
+- **パッケージ**: npm の org `@minamojs` の下に置きます。`@minamojs/minamo`（コアと、テスト用のエンジン `@minamojs/minamo/memory`）と、エンジンごとのパッケージ（`@minamojs/lambda-df`。後で `@minamojs/cloudflare`）に分けます。
   - 名前の短い `minamo` は、npm が「既存の `minami`、`minio` と似すぎている」として 403 で拒否しました。
   - `@minamo` のスコープは、別のユーザーが使っていました。
-  - `@minamojs/minamo` も候補に挙がりましたが、コアにアダプターを足す構成であることが名前で分かる `core` を選びました。`@mastra/core` や `@langchain/core` と同じ形です。
+  - メインパッケージは、プロダクト名がそのまま伝わる `@minamojs/minamo` に決めました。エンジンは別パッケージのままです。
 - **フレームワーク**: AI SDK や Strands などのアダプターは作りません。エージェントのループは利用者のコードで 15 行ほどで書けます（README の例）。フレームワークとの組み合わせ方が必要になったら、例として示します。
 - **名前**: 水面（みなも）。ローマ字でも英語でも同じように読めます。「下で何が動いていても、上は静か」というイメージです。
 
@@ -20,9 +20,9 @@ Hono との対応:
 | Hono | minamo |
 | --- | --- |
 | Web 標準の `Request`/`Response` | `Durable` インターフェース（`step`、`scope`、`signal`）と、JSON + `Uint8Array` のコーデック |
-| ランタイムのアダプター（`hono/aws-lambda` など） | エンジンのパッケージ（`@minamojs/lambda-df`、`@minamojs/core/memory`） |
+| ランタイムのアダプター（`hono/aws-lambda` など） | エンジンのパッケージ（`@minamojs/lambda-df`、`@minamojs/minamo/memory`） |
 | 依存ゼロの小さなコア | 依存ゼロで、`node:` の API を使わない。コアは minify 後 2 KB 未満（gzip 後で約 1 KB） |
-| `app.request()` でサーバーなしにテストできる | `@minamojs/core/memory` で AWS なしにテストでき、任意の地点でクラッシュさせられる |
+| `app.request()` でサーバーなしにテストできる | `@minamojs/minamo/memory` で AWS なしにテストでき、任意の地点でクラッシュさせられる |
 
 ### 既存のものとの違い（2026-09-24 時点）
 
@@ -36,8 +36,8 @@ Hono との対応:
 
 | ファイル | 内容 |
 | --- | --- |
-| `packages/core/src/index.ts` | `@minamojs/core`: `Durable`、`Retry`、コーデック（`stringify`、`parse`）、`model()`、`runTools()`、`RetryableError` |
-| `packages/core/src/memory.ts` | `@minamojs/core/memory`: `MemoryEngine`。テスト用のエンジンで、名前をキーにしてリプレイし、クラッシュを注入でき、signal にも答えられます |
+| `packages/core/src/index.ts` | `@minamojs/minamo`: `Durable`、`Retry`、コーデック（`stringify`、`parse`）、`model()`、`runTools()`、`RetryableError` |
+| `packages/core/src/memory.ts` | `@minamojs/minamo/memory`: `MemoryEngine`。テスト用のエンジンで、名前をキーにしてリプレイし、クラッシュを注入でき、signal にも答えられます |
 | `packages/lambda-df/src/index.ts` | `@minamojs/lambda-df`: `lambda(context)`。Lambda の `DurableContext` を `Durable` に変換します |
 | `examples/lambda-bedrock` | Lambda と Bedrock Converse を使う、デプロイできる例です |
 | `test/engines.test.ts` | 同じエージェントを `memory` と Lambda（`LocalDurableTestRunner`）で動かします |

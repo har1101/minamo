@@ -12,7 +12,7 @@
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1139.0",
     "@aws/durable-execution-sdk-js": "^2.4.0",
-    "@minamojs/core": "*",
+    "@minamojs/minamo": "*",
     "@minamojs/lambda-df": "*"
   },
   "devDependencies": {

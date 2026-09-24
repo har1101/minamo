@@ -32,7 +32,7 @@ jobs:
       - run: npm run build
       - run: npm run typecheck
       - run: npm test
-      - run: npm pack -w @minamojs/core -w @minamojs/lambda-df
+      - run: npm pack -w @minamojs/minamo -w @minamojs/lambda-df
       - name: Create GitHub release
         run: |
           if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then exit 0; fi
@@ -46,7 +46,7 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           tag=latest
           if [[ "${version}" == *-* ]]; then prerelease="${version#*-}"; tag="${prerelease%%.*}"; fi
-          for name in @minamojs/core @minamojs/lambda-df; do
+          for name in @minamojs/minamo @minamojs/lambda-df; do
             if npm view "${name}@${version}" version >/dev/null 2>&1; then echo "${name}@${version} is already published"; continue; fi
             npm publish "minamojs-${name#@minamojs/}-${version}.tgz" --access public --tag "${tag}"
           done

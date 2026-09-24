@@ -1,5 +1,5 @@
 import { withDurableExecution } from "@aws/durable-execution-sdk-js";
-import { model, RetryableError, runTools, type Durable, type Tool, type ToolCall, type ToolResult } from "@minamojs/core";
+import { model, RetryableError, runTools, type Durable, type Tool, type ToolCall, type ToolResult } from "@minamojs/minamo";
 import { lambda } from "@minamojs/lambda-df";
 
 // Stand-ins for the reader's own code.

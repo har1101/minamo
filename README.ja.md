@@ -18,21 +18,21 @@
 ## インストール
 
 ```bash
-npm install @minamojs/core@alpha @minamojs/lambda-df@alpha @aws/durable-execution-sdk-js
+npm install @minamojs/minamo@alpha @minamojs/lambda-df@alpha @aws/durable-execution-sdk-js
 ```
 
 Node.js 22 以上が必要です。
 
 | パッケージ | 内容 |
 | --- | --- |
-| `@minamojs/core` | コア（`Durable`、`model`、`runTools`、`Retry`、コーデック）と、テスト用のエンジン `@minamojs/core/memory`。依存はありません |
+| `@minamojs/minamo` | コア（`Durable`、`model`、`runTools`、`Retry`、コーデック）と、テスト用のエンジン `@minamojs/minamo/memory`。依存はありません |
 | `@minamojs/lambda-df` | AWS Lambda durable functions のエンジン。peer dependency は `@aws/durable-execution-sdk-js` 2.x です |
 
 ## 例
 
 ```ts
 import { withDurableExecution } from "@aws/durable-execution-sdk-js";
-import { model, RetryableError, runTools, type Durable, type Tool } from "@minamojs/core";
+import { model, RetryableError, runTools, type Durable, type Tool } from "@minamojs/minamo";
 import { lambda } from "@minamojs/lambda-df";
 
 const tools: Record<string, Tool> = {
@@ -112,7 +112,7 @@ Amazon Bedrock の Converse を使い、そのままデプロイできる完全�
 | import | エンジン | 状態 |
 | --- | --- | --- |
 | `@minamojs/lambda-df` | AWS Lambda durable functions（`@aws/durable-execution-sdk-js` 2.x） | デプロイした Lambda と `LocalDurableTestRunner` で動作確認済み |
-| `@minamojs/core/memory` | テスト用のメモリ上のエンジン | 動作確認済み |
+| `@minamojs/minamo/memory` | テスト用のメモリ上のエンジン | 動作確認済み |
 | — | Cloudflare Workflows | 候補 |
 
 ## AWS なしでテストする
@@ -120,7 +120,7 @@ Amazon Bedrock の Converse を使い、そのままデプロイできる完全�
 `MemoryEngine` は、本物のエンジンと同じようにリプレイします。呼び出しのたびにハンドラーを最初から実行し、記録済みの結果を返します。`crash` を使うと、オペレーションを記録した直後に呼び出しを止められるので、あらゆる地点からの復旧をテストできます。
 
 ```ts
-import { MemoryEngine } from "@minamojs/core/memory";
+import { MemoryEngine } from "@minamojs/minamo/memory";
 
 const engine = new MemoryEngine({ crash: () => true }); // 記録のたびにクラッシュさせる
 const running = engine.run((durable, prompt: string) => agent(durable, prompt), "hello");

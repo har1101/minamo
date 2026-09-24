@@ -24,7 +24,7 @@
   "sideEffects": false,
   "peerDependencies": {
     "@aws/durable-execution-sdk-js": ">=2.4.0 <3",
-    "@minamojs/core": "^0.1.0-alpha.0"
+    "@minamojs/minamo": "^0.1.0-alpha.0"
   },
   "repository": {
     "type": "git",

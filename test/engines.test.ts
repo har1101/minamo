@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { withDurableExecution } from "@aws/durable-execution-sdk-js";
 import { LocalDurableTestRunner, WaitingOperationStatus } from "@aws/durable-execution-sdk-js-testing";
-import { model, RetryableError, type Tool } from "@minamojs/core";
+import { model, RetryableError, type Tool } from "@minamojs/minamo";
 import { lambda } from "@minamojs/lambda-df";
-import { MemoryEngine } from "@minamojs/core/memory";
+import { MemoryEngine } from "@minamojs/minamo/memory";
 import { agent, scripted } from "./agent.js";
 
 // Real timers only where the platform clock matters: lookups finish out of call order, and the Lambda SDK's
