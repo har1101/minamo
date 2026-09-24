@@ -110,6 +110,8 @@ export type ToolCall = { id: string; name: string; input: unknown };
 export type ToolContext = {
   /** `<executionId>#<tool call id>`: identical on every retry, replay, and resume. Pass it to external APIs. */
   idempotencyKey: string;
+  /** The call being run, e.g. to key progress events by `call.id`. */
+  call: ToolCall;
 };
 
 export type Tool<I = never> =
@@ -146,7 +148,7 @@ async function runTool(durable: Durable, call: ToolCall, tool: Tool | undefined)
   const input = call.input as never;
   const base = { id: call.id, name: call.name };
   if (!tool) return { ...base, status: "error", error: `Unknown tool: ${call.name}` };
-  const ctx: ToolContext = { idempotencyKey: `${durable.executionId}#${call.id}` };
+  const ctx: ToolContext = { idempotencyKey: `${durable.executionId}#${call.id}`, call };
   try {
     if (tool.workflow) return { ...base, status: "ok", output: await tool.workflow(input, { ...ctx, durable }) };
     const retry = tool.retry ?? defaultToolRetry;

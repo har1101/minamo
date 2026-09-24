@@ -102,6 +102,7 @@ Runs one turn's tool calls concurrently and returns their results in call order.
 - Throw `RetryableError` to retry a plain tool's step (default: 3 attempts with exponential backoff). Any other error is recorded once as an error result that the model sees. Set `retry` on a tool to change this.
 - Unknown tools, exhausted retries, and failed workflows also become error results, so the model can react.
 - Every tool receives `idempotencyKey` (`<executionId>#<call id>`), which stays the same on every retry, replay, and resume. Pass it to external APIs.
+- Every tool also receives `call`, the `ToolCall` it runs, for example to key progress events by `call.id`.
 
 ### Values
 
