@@ -57,9 +57,11 @@ export function lambda(context: DurableContext): Durable {
   };
 }
 
-function retryStrategy({ when, initialDelay, maxDelay, ...rest }: Retry) {
+function retryStrategy({ when, maxAttempts, initialDelay, maxDelay, backoffRate }: Retry) {
+  // Only set fields reach the SDK: its `{ ...defaults, ...config }` merge would let `undefined` replace a default.
   const strategy = createRetryStrategy({
-    ...rest, ...(initialDelay && { initialDelay: seconds(initialDelay) }), ...(maxDelay && { maxDelay: seconds(maxDelay) }),
+    maxAttempts, ...(initialDelay && { initialDelay: seconds(initialDelay) }), ...(maxDelay && { maxDelay: seconds(maxDelay) }),
+    ...(backoffRate !== undefined && { backoffRate }),
   });
   return (error: Error, attempts: number) => (when?.(error) ?? true) ? strategy(error, attempts) : { shouldRetry: false };
 }

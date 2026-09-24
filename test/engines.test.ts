@@ -189,3 +189,21 @@ test("Lambda engine: a model call larger than the 256 KB step limit fails with a
   assert.equal(calls, 1, "the size error is not retried as a transient error");
 });
 
+test("Lambda engine: a retry with an unset backoffRate keeps the default backoff", async t => {
+  await LocalDurableTestRunner.setupTestEnvironment({ skipTime: true });
+  t.after(() => LocalDurableTestRunner.teardownTestEnvironment());
+  const options: { rate?: number } = {};
+  let attempts = 0;
+  const handler = withDurableExecution(async (_event: unknown, context) => lambda(context).step("flaky", async () => {
+    if (++attempts < 3) throw new Error("503 from upstream");
+    return "ok";
+  }, { retry: { maxAttempts: 3, backoffRate: options.rate } }));
+  const execution = await new LocalDurableTestRunner({ handlerFunction: handler }).run({ payload: {} });
+
+  const delays = execution.getHistoryEvents().flatMap(event => event.StepFailedDetails?.RetryDetails?.NextAttemptDelaySeconds ?? []);
+  assert.equal(execution.getStatus(), "SUCCEEDED");
+  assert.equal(attempts, 3);
+  assert.equal(delays.length, 2);
+  assert.ok(delays.every(Number.isFinite), `finite retry delays, got ${delays}`);
+});
+
