@@ -1,0 +1,67 @@
+{
+  "name": "minamo",
+  "version": "0.0.0",
+  "description": "Tiny, dependency-free core for durable AI agent loops on durable execution engines such as AWS Lambda durable functions",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./lambda": {
+      "types": "./dist/lambda.d.ts",
+      "import": "./dist/lambda.js"
+    },
+    "./memory": {
+      "types": "./dist/memory.d.ts",
+      "import": "./dist/memory.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "README.ja.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "prepack": "npm run build"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "sideEffects": false,
+  "peerDependencies": {
+    "@aws/durable-execution-sdk-js": ">=2.4.0 <3"
+  },
+  "peerDependenciesMeta": {
+    "@aws/durable-execution-sdk-js": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@aws/durable-execution-sdk-js": "^2.4.0",
+    "@aws/durable-execution-sdk-js-testing": "^1.1.4",
+    "@types/node": "^26.6.2",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/har1101/minamo.git"
+  },
+  "homepage": "https://github.com/har1101/minamo#readme",
+  "bugs": "https://github.com/har1101/minamo/issues",
+  "keywords": [
+    "ai-agents",
+    "durable-execution",
+    "durable-functions",
+    "aws-lambda",
+    "agent-loop",
+    "web-standards"
+  ],
+  "author": "har1101",
+  "license": "MIT"
+}
