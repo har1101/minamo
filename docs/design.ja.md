@@ -55,18 +55,17 @@ Hono との対応:
 - Lambda（`LocalDurableTestRunner`）: 同じエージェントがコールバックでサスペンドし、再開時にリプレイされること。モデルとツールが再実行されないこと。スコープが呼び出し順に並ぶこと。
 - Bun: クラッシュからのリプレイと、`Uint8Array` の復元。
 
-デプロイした Lambda ではまだ動かしていません。
+- デプロイした Lambda（us-east-1、2026-09-24）: `examples/lambda-bedrock` を Bedrock の Claude Haiku 4.5 で実行しました。承認した場合も却下した場合も `SUCCEEDED` になりました。モデル呼び出しは 2 回とも 1 回ずつしか実行されず、呼び出し（invocation）は 3 回でした。1 回目の実行、天気ツールのリトライ待ち、承認後の再開の 3 回です。ツールのスコープは呼び出し順に開き、`RetryableError` を投げた天気ツールは 2 回目の試行で成功しました。
 
 ## 5. ロードマップ
 
-1. デプロイした Lambda で、スモークテストを実行します（サスペンドと再開、並列のツール、承認）。Bedrock Converse を直接呼ぶ例（フレームワークなし）を `examples/` に置きます。
-2. npm に公開する準備をします。名前（`minamo`）の確保、Trusted Publishing、リリースのワークフローです。
-3. 必要になったら、大きな値の S3 への退避（`minamo/s3`）を追加します。
-4. 余力があれば、Cloudflare Workflows のアダプターを作ります。
+1. npm に公開する準備をします。名前（`minamo`）の確保、Trusted Publishing、リリースのワークフローです。
+2. 必要になったら、大きな値の S3 への退避（`minamo/s3`）を追加します。
+3. 余力があれば、Cloudflare Workflows のアダプターを作ります。
 
 ## 6. 未決事項
 
-- **Lambda のオペレーション名の長さの上限**: `toolUseId` を名前に含めても問題ないか（未確認）。
+- **Lambda のオペレーション名の長さの上限**: Bedrock の `toolUseId`（`tooluse_` と 22 文字）を含む `tools-1:tooluse_...` は、デプロイした Lambda で問題なく動きました。上限の値そのものは未確認です。
 - **ツールの入力の検証**: 今はツールごとに自分で検証します。Standard Schema（zod、valibot、arktype のどれでも使える型のみの仕様）に対応するかどうか。
 - **`strands-lambda-durable-functions` との関係**: 今は別のライブラリとして残します。minamo にはフレームワークのアダプターを作らないので、置き換えはしません。
 

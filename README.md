@@ -59,6 +59,8 @@ export const handler = withDurableExecution(async (event: { prompt: string }, co
 
 `provider`, `Message`, `getWeather`, `notifyReviewer`, and `payments` are your code. This example is type-checked in [`test/readme-example.ts`](./test/readme-example.ts).
 
+For a complete, deployable version with Amazon Bedrock Converse, see [examples/lambda-bedrock](./examples/lambda-bedrock).
+
 ## API
 
 ### `Durable`
@@ -96,7 +98,7 @@ Recorded values are JSON plus `Uint8Array`, which is stored as base64. Engines a
 
 | Import | Engine | Status |
 | --- | --- | --- |
-| `minamo/lambda` | AWS Lambda durable functions (`@aws/durable-execution-sdk-js` 2.x, an optional peer dependency) | Works with `LocalDurableTestRunner`; not yet run on deployed Lambda |
+| `minamo/lambda` | AWS Lambda durable functions (`@aws/durable-execution-sdk-js` 2.x, an optional peer dependency) | Works, on deployed Lambda and with `LocalDurableTestRunner` |
 | `minamo/memory` | In-memory engine for tests | Works |
 | — | Cloudflare Workflows | Candidate |
 

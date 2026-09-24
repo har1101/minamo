@@ -59,6 +59,8 @@ export const handler = withDurableExecution(async (event: { prompt: string }, co
 
 `provider`、`Message`、`getWeather`、`notifyReviewer`、`payments` は利用者のコードです。この例は [`test/readme-example.ts`](./test/readme-example.ts) で型チェックしています。
 
+Amazon Bedrock の Converse を使い、そのままデプロイできる完全な例は [examples/lambda-bedrock](./examples/lambda-bedrock) にあります。
+
 ## API
 
 ### `Durable`
@@ -96,7 +98,7 @@ export const handler = withDurableExecution(async (event: { prompt: string }, co
 
 | import | エンジン | 状態 |
 | --- | --- | --- |
-| `minamo/lambda` | AWS Lambda durable functions（`@aws/durable-execution-sdk-js` 2.x。任意の peer dependency） | `LocalDurableTestRunner` で動作確認済み。デプロイした Lambda ではまだ動かしていません |
+| `minamo/lambda` | AWS Lambda durable functions（`@aws/durable-execution-sdk-js` 2.x。任意の peer dependency） | デプロイした Lambda と `LocalDurableTestRunner` で動作確認済み |
 | `minamo/memory` | テスト用のメモリ上のエンジン | 動作確認済み |
 | — | Cloudflare Workflows | 候補 |
 

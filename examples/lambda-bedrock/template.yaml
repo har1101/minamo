@@ -1,0 +1,52 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: minamo example - a durable support agent (Lambda durable functions + Amazon Bedrock)
+
+Parameters:
+  BedrockModelId:
+    Type: String
+    Default: us.anthropic.claude-haiku-4-5-20251001-v1:0
+    Description: Bedrock model or inference profile ID.
+
+Resources:
+  Agent:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-agent"
+      Description: minamo example agent (Lambda durable function)
+      CodeUri: dist
+      Handler: index.handler
+      Runtime: nodejs22.x
+      Architectures: [arm64]
+      MemorySize: 512
+      Timeout: 120
+      # Durable executions must run a published version: replays need the code that wrote the journal.
+      AutoPublishAlias: live
+      DurableConfig:
+        ExecutionTimeout: 7200 # covers the 1-hour approval timeout plus agent work
+        RetentionPeriodInDays: 7
+      Environment:
+        Variables:
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - lambda:CheckpointDurableExecution
+                - lambda:GetDurableExecutionState
+              # Built from the name: GetAtt would be circular.
+              Resource: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-agent:*"
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModelWithResponseStream
+              Resource:
+                # US cross-region inference profiles route to foundation models in several US regions.
+                - !Sub "arn:${AWS::Partition}:bedrock:*::foundation-model/*"
+                - !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*"
+
+Outputs:
+  FunctionName:
+    Value: !Ref Agent
+  AliasArn:
+    Description: Invoke this qualified ARN.
+    Value: !Ref Agent.Alias

@@ -1,0 +1,23 @@
+{
+  "name": "minamo-example-lambda-bedrock",
+  "private": true,
+  "type": "module",
+  "description": "minamo on AWS Lambda durable functions with Amazon Bedrock Converse, no agent framework",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "deploy": "bash scripts/deploy.sh",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.1139.0",
+    "@aws/durable-execution-sdk-js": "^2.4.0",
+    "minamo": "file:../.."
+  },
+  "devDependencies": {
+    "@aws-sdk/client-lambda": "^3.1139.0",
+    "@types/node": "^26.6.2",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.3"
+  }
+}
