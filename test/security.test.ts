@@ -125,7 +125,7 @@ test("memory engine: idempotency keys differ for a reused call ID and a nested r
   assert.notEqual(keys(10)[0], keys(20)[0]);
 });
 
-test("Lambda engine: idempotency keys differ for a reused call ID and a nested runTools, survive resume, and hide the ARN", async t => {
+test("Lambda engine: idempotency keys differ for a reused call ID and a nested runTools, survive resume, and do not contain the ARN", async t => {
   await LocalDurableTestRunner.setupTestEnvironment({ skipTime: false });
   t.after(() => LocalDurableTestRunner.teardownTestEnvironment());
   const { seen, handler, keys, invocations } = refunds();

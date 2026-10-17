@@ -24,8 +24,9 @@ export type StepInfo = { attempt: number };
 
 export interface Durable {
   /**
-   * Identifies this scope: the same on every replay and resume, different for every other scope of every execution.
-   * An engine must not put a sensitive execution identifier in it; Lambda hashes the execution ARN.
+   * Identifies this scope: the same on every replay and resume, and unique within one engine root (the `Durable` an
+   * engine creates for the handler) and across executions. An engine must not put a sensitive execution identifier in
+   * it; Lambda hashes the execution ARN, so the id does not contain it.
    */
   readonly id: string;
   /** Runs `fn` and records its result. Without `retry` it runs once. `fn` must not use durable operations. */

@@ -23,7 +23,7 @@ AWS_REGION=us-east-1 npm run smoke -- reject
 
 `deploy` uses only the AWS CLI. CloudFormation runs the SAM transform, so the SAM CLI is not needed. It creates the bucket `minamo-artifacts-<account>-<region>` for the code package unless you set `ARTIFACT_BUCKET`. Set `STACK_NAME` or `BEDROCK_MODEL_ID` to override the defaults.
 
-To answer an approval yourself, find the `approval_requested` log line (it has the token) and run:
+To answer an approval yourself, find the `approval_requested` log line (it has the token) and run the command below. The handler logs the token for this demo only: anyone who can read the logs could approve the refund. A real app sends the token only to the approver; see [Security](../../README.md#security).
 
 ```bash
 aws lambda send-durable-execution-callback-success --callback-id <token> \

@@ -86,9 +86,11 @@ The engine interface. Adapters implement it; you pass it around.
 | `step(name, fn, { retry }?)` | Runs `fn` and records its result. Without `retry` it runs once; with `retry` it runs again for errors that `retry.when` accepts. On replay, returns the recorded result without running `fn`. `fn` must not use durable operations. |
 | `scope(name, fn)` | Runs `fn` with a child `Durable` that may use durable operations. A completed scope returns its recorded result. |
 | `signal(name, publish, { timeout }?)` | Suspends until someone completes the token that `publish` receives, and returns the JSON they sent as `unknown`: parsed as plain JSON, without the codec, and unvalidated, because whoever holds the token chooses it. `publish` runs once, like a step without `retry`. On Lambda this is `waitForCallback`, and the function does not run while it waits. |
-| `id` | Identifies this scope. The same on every replay and resume, and different for every other scope of every execution. An engine must not put a sensitive execution identifier in `id`: `@minamojs/lambda-df` derives it with SHA-256 from the execution ARN and the scope names. |
+| `id` | Identifies this scope. The same on every replay and resume, and unique within one engine root (the `Durable` the engine creates for your handler) and across executions. An engine must not put a sensitive execution identifier in `id`: `@minamojs/lambda-df` derives it with SHA-256 from the execution ARN and the scope names, so it does not contain the ARN. An unkeyed hash can still confirm a guessed ARN. |
 
 Names must be unique within a scope and deterministic: build them from your input and from recorded results, never from time or randomness. Every engine rejects a repeated name in one scope with `JournalError`.
+
+On Lambda, call `lambda()` once, on the handler's own context. Run parallel agents in `durable.scope` calls, not by wrapping SDK child contexts (`runInChildContext`, `parallel`, `map`) with `lambda()`: every wrapper starts from the same root id, so those agents would share ids and idempotency keys.
 
 ### `model(durable, name, call, options?)`
 

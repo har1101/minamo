@@ -52,7 +52,8 @@ const tools: Record<string, Tool> = {
   issue_refund: {
     workflow: async ({ orderId, amountYen }: { orderId: string; amountYen: number }, { durable, idempotencyKey }) => {
       const answer = await durable.signal("approval", async token => {
-        // In a real app, notify a reviewer (Slack, email, a web app) with the token.
+        // Demo only: anyone who can read the logs can answer with this token. A real app sends it only to the
+        // reviewer (Slack, email, a web app); see the Security section of the repository README.
         console.log(JSON.stringify({ type: "approval_requested", orderId, amountYen, token }));
       }, { timeout: { hours: 1 } }) as { approved?: unknown; reviewer?: unknown } | null;
       // Whoever holds the token can answer with any JSON: approve only an explicit `true`.

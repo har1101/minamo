@@ -38,13 +38,17 @@ function encodeStep(name: string, value: unknown): string | undefined {
 // Without `retry` an operation runs once on every engine, instead of falling back to the SDK's default retries.
 const noRetry = () => ({ shouldRetry: false });
 
-/** SHA-256 hex. One-way, so an `id` never reveals the execution ARN (account, function, execution name). */
+/** SHA-256 hex, so an `id` does not contain the execution ARN. Unkeyed, so it can still confirm a guessed ARN. */
 const digest = (text: string) => createHash("sha256").update(text).digest("hex");
 
 /** Names started on each SDK context, shared by every `Durable` that wraps the same context. */
 const claimed = new WeakMap<DurableContext, Set<string>>();
 
-/** Lambda durable functions engine. Pass the handler's own context; child scopes are derived from it. */
+/**
+ * Lambda durable functions engine. Call it once, on the handler's own context; child scopes are derived from it.
+ * Every call starts from the same root id, so wrapping SDK child contexts (`runInChildContext`, `parallel`, `map`)
+ * separately would give them the same ids and idempotency keys: run parallel agents in `durable.scope` instead.
+ */
 export function lambda(context: DurableContext): Durable {
   return wrap(context, digest(context.executionContext.durableExecutionArn));
 }
