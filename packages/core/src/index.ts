@@ -38,29 +38,54 @@ export interface Durable {
 
 // ---------------------------------------------------------------------------------------------------------------
 // Codec: every engine persists values through this, so durable values are JSON plus Uint8Array (Web base64).
+// A Uint8Array is stored as `{"$bytes": base64}`. Data that merely has the shape of a marker (one key, `$bytes` or
+// `$esc`), such as tool output or model-chosen input, is stored as `{"$esc": data}`, so it never decodes as bytes.
 
 const BYTES = "$bytes";
+const ESCAPE = "$esc";
+
+function isMarkerShape(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const keys = Object.keys(value);
+  return keys.length === 1 && (keys[0] === BYTES || keys[0] === ESCAPE);
+}
 
 export function stringify(value: unknown): string {
-  return JSON.stringify(value ?? null, function (this: Record<string, unknown>, key, current) {
+  const wrappers = new WeakSet<object>();
+  return JSON.stringify(value ?? null, function (this: Record<string, unknown>, key, current: unknown) {
     const original = this[key];
-    if (!(original instanceof Uint8Array)) return current;
-    let binary = "";
-    for (const byte of original) binary += String.fromCharCode(byte);
-    return { [BYTES]: btoa(binary) };
+    if (original instanceof Uint8Array) {
+      let binary = "";
+      for (const byte of original) binary += String.fromCharCode(byte);
+      return { [BYTES]: btoa(binary) };
+    }
+    // A wrapper's own `$esc` entry is the escaped data itself; escaping it again would never end.
+    if (isMarkerShape(current) && !wrappers.has(this)) {
+      const wrapper = { [ESCAPE]: current };
+      wrappers.add(wrapper);
+      return wrapper;
+    }
+    return current;
   });
 }
 
 export function parse<T>(text: string): T {
-  return JSON.parse(text, (_key, current) => {
-    if (current && typeof current === "object" && !Array.isArray(current)) {
-      const keys = Object.keys(current);
-      if (keys.length === 1 && keys[0] === BYTES && typeof current[BYTES] === "string") {
-        return Uint8Array.from(atob(current[BYTES]), c => c.charCodeAt(0));
-      }
+  // Top-down, so an escaped object is unwrapped before its content is interpreted.
+  const revive = (current: unknown): unknown => {
+    if (typeof current !== "object" || current === null) return current;
+    if (Array.isArray(current)) return current.map(revive);
+    const record = current as Record<string, unknown>;
+    const keys = Object.keys(record);
+    if (keys.length === 1 && keys[0] === BYTES && typeof record[BYTES] === "string") {
+      return Uint8Array.from(atob(record[BYTES]), c => c.charCodeAt(0));
     }
-    return current;
-  }) as T;
+    // Only `stringify` writes an escape, and only around a marker-shaped object.
+    const target = keys.length === 1 && keys[0] === ESCAPE && isMarkerShape(record[ESCAPE]) ? record[ESCAPE] : record;
+    // Own keys only. JSON.parse makes `__proto__` an own data property, and assigning to it keeps it one.
+    for (const key of Object.keys(target)) target[key] = revive(target[key]);
+    return target;
+  };
+  return revive(JSON.parse(text)) as T;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
