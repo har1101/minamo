@@ -10,6 +10,7 @@ All packages (`@minamojs/minamo`, `@minamojs/lambda-df`) share one version.
 - **Breaking** `@minamojs/minamo`: `Durable` has `path`, the names of the enclosing scopes. Both engines implement it; a custom engine must too.
 - `@minamojs/minamo`: `runTools` rejects a turn that repeats a call id, before any tool runs. Before, the memory engine failed with a duplicate operation name and Lambda ran both calls, whose results the model could not tell apart.
 - `@minamojs/minamo`: `runTools` fails when a replayed tool result names another call id or tool, instead of returning another tool's recorded result.
+- README: a Security section (signal tokens and approvals, tool inputs, what the journal keeps), and the approval examples (README, `examples/lambda-bedrock`) accept only `approved === true`. Before, `{"approved": "false"}` approved the refund.
 
 ## 0.1.0-alpha.1 (2026-09-25)
 

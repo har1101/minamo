@@ -46,8 +46,9 @@ const tools: Record<string, Tool> = {
   refund: {
     // workflow ツールは durable なオペレーションを使えます。ここでは人の回答を（計算コストなしで）待ちます。
     workflow: async ({ orderId }: { orderId: string }, { durable, idempotencyKey }) => {
-      const { approved } = await durable.signal<{ approved: boolean }>("approval", token => notifyReviewer(orderId, token));
-      if (!approved) return { status: "rejected" };
+      const answer = await durable.signal<{ approved?: unknown } | null>("approval", token => notifyReviewer(orderId, token));
+      // 外部から届く値: 明示的な承認だけを受け付けます。"false"、"yes"、null、項目の欠落はすべて却下です。
+      if (answer?.approved !== true) return { status: "rejected" };
       return durable.step("refund", () => payments.refund(orderId, { idempotencyKey }));
     },
   },
@@ -136,6 +137,12 @@ const result = await running;
 - **at-least-once**: 副作用の後、結果を記録する前にプロセスが止まると、ツールがもう一度実行されることがあります。外部の API には `idempotencyKey` を使ってください。
 - **決定性**: step の外のコードは、リプレイのたびにもう一度実行されます。同じ durable な呼び出しを同じ順序で行う必要があります。
 - **Lambda のクォータ**: 1 つの実行で使えるのは、オペレーション 30,000 個、チェックポイントは累計 100 MB までです。1 つの step の結果（1 回のモデル呼び出しのイベントなど）は 1 MB までです。これを超えると、`@minamojs/lambda-df` は step の名前を示すエラーでその step を失敗させます。signal の回答（コールバックの結果）も 1 MB までで、これより大きい回答は送信時に Lambda が拒否します。scope の結果はこれより大きくてもかまいません。その場合 SDK は scope の子の記録を残し、リプレイ時に子から結果を組み立て直します。長い会話は複数の実行に分けます。リプレイで同じコードが動くように、公開したバージョンかエイリアスを呼び出します。
+
+## セキュリティ
+
+- **signal と承認**: Lambda では、signal の token はコールバック ID です。この ID を持ち、その関数に `lambda:SendDurableExecutionCallbackSuccess` を呼べる人は誰でも回答でき、minamo は誰が回答したかを知りません。token は承認用のバックエンドにだけ送り、操作を頼んだ利用者には渡さず、ログにも出さないでください。バックエンドは承認者を認証し、その人がこの依頼を承認してよいかを確認します。`signal<T>` は回答を検証しません。`T` は型にすぎません。例のように回答を厳密に確認し（`"false"` も truthy です）、`timeout` を設定してください。
+- **ツールの入力はモデルの出力です**: プロンプトインジェクションで選ばれることがあります。どの入力もツールの中で検証し、承認の依頼にはツールが実際に行うことをそのまま示してください。
+- **ジャーナルに残るもの**: チェックポイントには、モデルの出力（ツール呼び出しの引数を含む）、ツールの結果、ツールのエラーメッセージが、実行の保持期間のあいだ平文の JSON で残ります。`lambda:GetDurableExecution*` は、これらを見てよいプリンシパルにだけ許可してください。ツールのエラーメッセージはモデルにも渡るので、秘密情報を含めないでください。
 
 ## 設計
 

@@ -46,8 +46,9 @@ const tools: Record<string, Tool> = {
   refund: {
     // Workflow tools may use durable operations: here, wait (without compute cost) until a human answers.
     workflow: async ({ orderId }: { orderId: string }, { durable, idempotencyKey }) => {
-      const { approved } = await durable.signal<{ approved: boolean }>("approval", token => notifyReviewer(orderId, token));
-      if (!approved) return { status: "rejected" };
+      const answer = await durable.signal<{ approved?: unknown } | null>("approval", token => notifyReviewer(orderId, token));
+      // The answer comes from outside: accept only an explicit approval. "false", "yes", null, or no field all reject.
+      if (answer?.approved !== true) return { status: "rejected" };
       return durable.step("refund", () => payments.refund(orderId, { idempotencyKey }));
     },
   },
@@ -136,6 +137,12 @@ const result = await running;
 - **At-least-once.** A tool can run again if the process stops after its side effect and before its result is recorded. Use `idempotencyKey` with external APIs.
 - **Determinism.** Code outside steps runs again on every replay. It must make the same durable calls in the same order.
 - **Lambda quotas.** An execution can have up to 30,000 operations and up to 100 MB of checkpoint data in total. Each step result, such as the events of one model call, can be up to 1 MB; `@minamojs/lambda-df` fails a larger step with an error that names it. A signal's answer (the callback result) can also be up to 1 MB; Lambda rejects a larger one when it is sent. A scope result can be larger: the SDK then records the scope's children and rebuilds the result from them on replay. Split long conversations across executions. Invoke a published version or alias, so that replays run the same code.
+
+## Security
+
+- **Signals and approvals.** On Lambda, a signal's token is a callback ID: anyone who holds it and may call `lambda:SendDurableExecutionCallbackSuccess` on the function can answer, and minamo does not know who answered. Send tokens only to your approval backend, never to the user who asked for the action, and do not log them. The backend must authenticate the approver and check that this person may approve this request. `signal<T>` does not validate the answer; `T` is only a type. Check the answer strictly, as in the example (`"false"` is truthy), and set `timeout`.
+- **Tool inputs are model output.** Prompt injection can choose them. Validate every input in the tool, and let approval requests show exactly what the tool will do.
+- **What the journal keeps.** Checkpoints hold model output (including tool call arguments), tool results, and tool error messages as plain JSON for the execution's retention period. Grant `lambda:GetDurableExecution*` only to principals that may see this data. Tool error messages are also shown to the model, so keep secrets out of them.
 
 ## Design
 
