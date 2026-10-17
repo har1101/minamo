@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { isDeepStrictEqual } from "node:util";
 import { withDurableExecution } from "@aws/durable-execution-sdk-js";
 import { LocalDurableTestRunner } from "@aws/durable-execution-sdk-js-testing";
-import { parse, runTools, stringify, type Tool } from "@minamojs/minamo";
+import { parse, runTools, stringify, type Tool, type ToolCall } from "@minamojs/minamo";
 import { lambda } from "@minamojs/lambda-df";
 import { MemoryEngine } from "@minamojs/minamo/memory";
 
@@ -64,4 +64,11 @@ test("memory engine: a signal answer shaped like a codec marker arrives as data"
   const running = engine.run(durable => durable.signal("approval", async t => token.resolve(t)), null);
   engine.complete(await token.promise, { approved: { $bytes: "AQ==" } });
   assert.deepEqual(await running, { approved: { $bytes: "AQ==" } });
+});
+
+test("memory engine: a call ID containing / gets its own journal entry", async () => {
+  const tools: Record<string, Tool> = { echo: { run: async (input: number) => input } };
+  const calls: ToolCall[] = [{ id: "a", name: "echo", input: 1 }, { id: "a/run", name: "echo", input: 2 }];
+  const results = await new MemoryEngine({ crash: () => true }).run(durable => runTools(durable, "tools-1", calls, tools), null);
+  assert.deepEqual(results.map(r => r.status === "ok" ? r.output : r.error), [1, 2]);
 });

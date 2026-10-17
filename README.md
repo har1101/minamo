@@ -118,7 +118,7 @@ Recorded values are JSON plus `Uint8Array`. Engines apply the same codec to ever
 
 ## Testing without AWS
 
-`MemoryEngine` replays like a real engine: each invocation runs your handler from the top and returns recorded results. `crash` stops an invocation right after an operation is recorded, so you can test recovery at every point:
+`MemoryEngine` replays like a real engine: each invocation runs your handler from the top and returns recorded results. `crash` stops an invocation right after an operation is recorded, so you can test recovery at every point. `crash` receives the operation's path: the names from the root, joined by `/`, with `%`, `/`, and `#` in each name percent-encoded (`tools-1:a/run`).
 
 ```ts
 import { MemoryEngine } from "@minamojs/minamo/memory";

@@ -4,11 +4,15 @@ type Entry = { ok: true; text: string } | { ok: false; error: string };
 
 const CRASH = Symbol("crash");
 
+/** One path segment. Encoding `%`, `/`, and `#` keeps a name such as `a/run` from reaching another entry. */
+const segment = (name: string) => name.replace(/[%/#]/g, encodeURIComponent);
+
 /**
  * In-memory durable engine for tests, with real replay semantics: every invocation re-runs the handler from the top
  * and completed operations return their journaled results. Name-keyed, like Cloudflare Workflows and Inngest.
  * `crash(path)` kills the invocation right after that operation is journaled, to exercise recovery.
  * Retry delays and signal timeouts are not simulated. A signal's token is its operation path.
+ * A path joins operation names with `/`, with `%`, `/`, and `#` in each name percent-encoded.
  */
 export class MemoryEngine {
   readonly executionId = `memory-${crypto.randomUUID()}`;
@@ -75,7 +79,7 @@ export class MemoryEngine {
     const durable = (prefix: string): Durable => ({
       executionId: engine.executionId,
       async step(name, fn, options) {
-        const path = prefix + name;
+        const path = prefix + segment(name);
         claim(path);
         const done = engine.journal.get(path);
         if (done) return replay(done) as never;
@@ -100,7 +104,7 @@ export class MemoryEngine {
         }
       },
       async scope(name, fn) {
-        const path = prefix + name;
+        const path = prefix + segment(name);
         claim(path);
         const done = engine.journal.get(path);
         if (done) return replay(done) as never;
@@ -115,7 +119,7 @@ export class MemoryEngine {
         return parse(text);
       },
       async signal(name, publish) {
-        const path = prefix + name;
+        const path = prefix + segment(name);
         claim(path);
         const done = engine.journal.get(path);
         if (done) return replay(done) as never;

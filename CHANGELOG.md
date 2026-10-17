@@ -4,6 +4,7 @@ All packages (`@minamojs/minamo`, `@minamojs/lambda-df`) share one version.
 
 ## Unreleased
 
+- `@minamojs/minamo/memory`: `MemoryEngine` percent-encodes `%`, `/`, and `#` inside each operation name, so a tool call ID such as `a/run` no longer replays another operation's journal entry. `crash(path)` and signal tokens see the encoded path.
 - `@minamojs/minamo`: the codec no longer turns data shaped like its bytes marker into a `Uint8Array`. A one-key object whose key is `$bytes`, `$$bytes`, and so on gains one `$` when recorded and loses it when read, so a tool output or model event such as `{"$bytes": "aGk="}` replays unchanged. Journals written by 0.1.0-alpha.1 decode as before, except a recorded one-key object whose key is `$$bytes` or longer, which loses one `$`.
 - `@minamojs/lambda-df`: a step result can be up to 1 MB, Lambda's new limit per durable operation (was 256 KB). The README states Lambda's new limit of 30,000 operations per execution (was 3,000).
 
