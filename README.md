@@ -86,6 +86,7 @@ The engine interface. Adapters implement it; you pass it around.
 | `scope(name, fn)` | Runs `fn` with a child `Durable` that may use durable operations. A completed scope returns its recorded result. |
 | `signal(name, publish, { timeout }?)` | Suspends until someone completes the token that `publish` receives. `publish` runs once, like a step without `retry`. On Lambda this is `waitForCallback`, and the function does not run while it waits. |
 | `executionId` | Stable across replays and resumes. |
+| `path` | Names of the enclosing scopes, outermost first. Empty at the top level. |
 
 Names must be unique within a scope and deterministic: build them from your input and from recorded results, never from time or randomness.
 
@@ -101,7 +102,7 @@ Runs one turn's tool calls concurrently and returns their results in call order.
 - A tool with `workflow` gets its own `Durable` and may use steps, scopes, and signals, for example approvals or sub-agents.
 - Throw `RetryableError` to retry a plain tool's step (default: 3 attempts with exponential backoff). Any other error is recorded once as an error result that the model sees. Set `retry` on a tool to change this.
 - Unknown tools, exhausted retries, and failed workflows also become error results, so the model can react.
-- Every tool receives `idempotencyKey` (`<executionId>#<call id>`), which stays the same on every retry, replay, and resume. Pass it to external APIs.
+- Every tool receives `idempotencyKey`, which stays the same on every retry, replay, and resume, and differs for every other tool call. Pass it to external APIs. It is a SHA-256 hex digest of the execution ID and the path of the call's scope, so it does not reveal the execution ID, and a call ID that the provider reuses in a later turn or in a nested agent gets a different key.
 - Every tool also receives `call`, the `ToolCall` it runs, for example to key progress events by `call.id`.
 
 ### Values

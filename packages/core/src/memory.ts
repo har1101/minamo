@@ -72,8 +72,9 @@ export class MemoryEngine {
       throw new Error(entry.error);
     };
 
-    const durable = (prefix: string): Durable => ({
+    const durable = (prefix: string, scopes: readonly string[]): Durable => ({
       executionId: engine.executionId,
+      path: scopes,
       async step(name, fn, options) {
         const path = prefix + name;
         claim(path);
@@ -106,7 +107,7 @@ export class MemoryEngine {
         if (done) return replay(done) as never;
         let text;
         try {
-          text = stringify(await fn(durable(`${path}/`)));
+          text = stringify(await fn(durable(`${path}/`, [...scopes, name])));
         } catch (error) {
           if (error !== CRASH && error instanceof Error) record(path, { ok: false, error: error.message });
           throw error;
@@ -131,7 +132,7 @@ export class MemoryEngine {
       },
     });
 
-    handler(durable(""), input).then(
+    handler(durable("", []), input).then(
       value => { if (!dead) { dead = true; stop.resolve({ done: true, value }); } },
       error => { if (!dead) { dead = true; stop.reject(error); } },
     );

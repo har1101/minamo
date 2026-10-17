@@ -25,6 +25,12 @@ export type StepInfo = { attempt: number };
 export interface Durable {
   /** Stable for the whole execution, across replays and resumes. */
   readonly executionId: string;
+  /**
+   * Names of the scopes this `Durable` runs in, outermost first; empty at the top level. The `Durable` that
+   * `scope(name, fn)` passes to `fn` has the path `[...path, name]`. With `executionId` it identifies the scope within
+   * all executions, because names are unique within their scope.
+   */
+  readonly path: readonly string[];
   /** Runs `fn` and records its result. Without `retry` it runs once. `fn` must not use durable operations. */
   step<T>(name: string, fn: (info: StepInfo) => Promise<T>, options?: { retry?: Retry }): Promise<T>;
   /** Runs `fn` in a child scope that may use durable operations. A completed scope replays its recorded result. */
@@ -133,7 +139,11 @@ export class RetryableError extends Error {
 export type ToolCall = { id: string; name: string; input: unknown };
 
 export type ToolContext = {
-  /** `<executionId>#<tool call id>`: identical on every retry, replay, and resume. Pass it to external APIs. */
+  /**
+   * Unique to this tool call within all executions, and identical on every retry, replay, and resume. Pass it to
+   * external APIs. A SHA-256 hex digest of the execution ID and the path of the call's scope, so it does not reveal
+   * the execution ID, and a call ID that the provider reuses in a later turn or in a nested agent gets its own key.
+   */
   idempotencyKey: string;
   /** The call being run, e.g. to key progress events by `call.id`. */
   call: ToolCall;
@@ -164,16 +174,27 @@ const defaultToolRetry: Retry = {
  * Runs one model turn's tool calls concurrently. Each call gets its own scope, opened synchronously in call order,
  * so completion order never changes operation identity.
  */
-export function runTools(durable: Durable, turn: string, calls: readonly ToolCall[], tools: Record<string, Tool>): Promise<ToolResult[]> {
+export async function runTools(durable: Durable, turn: string, calls: readonly ToolCall[], tools: Record<string, Tool>): Promise<ToolResult[]> {
   // Inputs are model output and are not validated here; each tool validates its own input.
-  return Promise.all(calls.map(call => durable.scope(`${turn}:${call.id}`, child => runTool(child, call, tools[call.name]))));
+  const names = calls.map(call => `${turn}:${call.id}`);
+  // Keys first, so that no await separates the scopes and every tool starts in call order.
+  const keys = await Promise.all(names.map(name => idempotencyKey(durable.executionId, [...durable.path, name])));
+  return Promise.all(calls.map((call, index) =>
+    durable.scope(names[index], child => runTool(child, call, tools[call.name], keys[index]))));
 }
 
-async function runTool(durable: Durable, call: ToolCall, tool: Tool | undefined): Promise<ToolResult> {
+/** SHA-256 hex digest of a scope's identity. JSON keeps the parts apart even if a name contains a separator. */
+async function idempotencyKey(executionId: string, path: readonly string[]): Promise<string> {
+  const identity = new TextEncoder().encode(JSON.stringify([executionId, ...path]));
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", identity));
+  return Array.from(digest, byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function runTool(durable: Durable, call: ToolCall, tool: Tool | undefined, idempotencyKey: string): Promise<ToolResult> {
   const input = call.input as never;
   const base = { id: call.id, name: call.name };
   if (!tool) return { ...base, status: "error", error: `Unknown tool: ${call.name}` };
-  const ctx: ToolContext = { idempotencyKey: `${durable.executionId}#${call.id}`, call };
+  const ctx: ToolContext = { idempotencyKey, call };
   try {
     if (tool.workflow) return { ...base, status: "ok", output: await tool.workflow(input, { ...ctx, durable }) };
     const retry = tool.retry ?? defaultToolRetry;
