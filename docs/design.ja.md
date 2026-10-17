@@ -21,7 +21,7 @@ Hono との対応:
 | --- | --- |
 | Web 標準の `Request`/`Response` | `Durable` インターフェース（`step`、`scope`、`signal`）と、JSON + `Uint8Array` のコーデック |
 | ランタイムのアダプター（`hono/aws-lambda` など） | エンジンのパッケージ（`@minamojs/lambda-df`、`@minamojs/minamo/memory`） |
-| 依存ゼロの小さなコア | 依存ゼロで、`node:` の API を使わない。コアは minify 後 2 KB 未満（gzip 後で約 1 KB） |
+| 依存ゼロの小さなコア | 依存ゼロで、`node:` の API を使わない。コアは minify 後で約 2.1 KB（gzip 後で約 1.1 KB） |
 | `app.request()` でサーバーなしにテストできる | `@minamojs/minamo/memory` で AWS なしにテストでき、任意の地点でクラッシュさせられる |
 
 ### 既存のものとの違い（2026-09-24 時点）

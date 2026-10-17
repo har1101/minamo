@@ -11,7 +11,7 @@ Write your agent loop as plain TypeScript. minamo records each model call and ea
 > [!WARNING]
 > Experimental alpha (`0.1.0-alpha.1`). The API will change.
 
-- **No dependencies.** The core uses only Web standard APIs: no `node:` imports, no `Buffer`, no `AsyncLocalStorage`. It is under 2 KB minified and about 1 KB gzipped.
+- **No dependencies.** The core uses only Web standard APIs: no `node:` imports, no `Buffer`, no `AsyncLocalStorage`. It is about 2.1 KB minified and about 1.1 KB gzipped.
 - **Bring your own loop and model.** minamo does not define a message format. It records whatever your model stream yields.
 - **Engine adapters, not engine lock-in.** The core talks to a three-operation `Durable` interface. `@minamojs/lambda-df` implements it with the Lambda durable execution SDK. Cloudflare Workflows is the candidate for a second engine.
 
@@ -137,6 +137,13 @@ const result = await running;
 - **At-least-once.** A tool can run again if the process stops after its side effect and before its result is recorded. Use `idempotencyKey` with external APIs.
 - **Determinism.** Code outside steps runs again on every replay. It must make the same durable calls in the same order.
 - **Lambda quotas.** An execution can have up to 30,000 operations and up to 100 MB of checkpoint data in total. Each step result, such as the events of one model call, can be up to 1 MB; `@minamojs/lambda-df` fails a larger step with an error that names it. minamo checks only step results, because the SDK re-runs a scope with a large result on replay and the service rejects a large signal payload from its sender. Split long conversations across executions. Invoke a published version or alias, so that replays run the same code.
+
+## Security
+
+- **Approve only explicit values.** `signal` returns whatever JSON the token holder sent, unvalidated. Compare against the exact value you expect, such as `answer?.approved === true`. A truthy check approves `{"approved": "false"}`.
+- **Keep signal tokens secret.** Anyone who has a token can complete the signal. Send it only to the approver, never to the model or the requester, and authenticate the approver in your backend before it completes the callback.
+- **Keep secrets out of tool errors and outputs.** Both are recorded in the journal and shown to the model. Write error messages that are safe for the model and anyone who can read the execution history to see.
+- **Idempotency keys are opaque.** Pass `idempotencyKey` to external APIs as it is. Do not parse it or rely on its format, which differs by engine and may change.
 
 ## Design
 
