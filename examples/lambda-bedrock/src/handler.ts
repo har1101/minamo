@@ -51,14 +51,16 @@ const tools: Record<string, Tool> = {
   },
   issue_refund: {
     workflow: async ({ orderId, amountYen }: { orderId: string; amountYen: number }, { durable, idempotencyKey }) => {
-      const answer = await durable.signal<{ approved: boolean; reviewer?: string }>("approval", async token => {
-        // In a real app, notify a reviewer (Slack, email, a web app) with the token.
+      const answer = await durable.signal<{ approved?: unknown; reviewer?: unknown } | null>("approval", async token => {
+        // In a real app, send the token only to your approval backend (not to the customer) and never log it:
+        // anyone who has it and may call SendDurableExecutionCallbackSuccess can answer. The log line is for the demo.
         console.log(JSON.stringify({ type: "approval_requested", orderId, amountYen, token }));
       }, { timeout: { hours: 1 } });
-      if (!answer?.approved) return { status: "rejected", orderId };
+      // Approve only an explicit `true`: "false", "yes", 1, or a missing field all reject.
+      if (answer?.approved !== true) return { status: "rejected", orderId };
       // Pass the idempotency key to the payment API so a retried step never refunds twice.
       return durable.step("refund", async () => ({
-        status: "refunded", orderId, amountYen, reviewer: answer.reviewer ?? null, idempotencyKey,
+        status: "refunded", orderId, amountYen, reviewer: typeof answer.reviewer === "string" ? answer.reviewer : null, idempotencyKey,
       }));
     },
   },

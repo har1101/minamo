@@ -33,11 +33,11 @@ function scenario() {
   const transfer: Tool<{ amount: number }> = {
     workflow: async ({ amount }, { durable, call }) => {
       log.callIds.transfer = call.id;
-      const answer = await durable.signal<{ approved: boolean }>("approval", async t => {
+      const answer = await durable.signal<{ approved?: unknown } | null>("approval", async t => {
         log.published++;
         token.resolve(t);
       });
-      if (!answer.approved) return { status: "rejected" };
+      if (answer?.approved !== true) return { status: "rejected" };
       return durable.step("execute", async () => {
         log.executed++;
         return { status: "sent", amount };
@@ -61,6 +61,18 @@ test("memory engine: suspends for approval and resumes without repeating work", 
   assert.equal(log.published, 1);
   assert.deepEqual(log.callIds, { slow: "a", fast: "b", transfer: "c" }, "run and workflow tools see their own call");
   assert.equal(engine.invocations, 2);
+});
+
+test("memory engine: only an explicit true approves", async () => {
+  for (const answer of [{ approved: "false" }, { approved: "true" }, { approved: 1 }, {}, null]) {
+    const { log, deps } = scenario();
+    const engine = new MemoryEngine();
+    const running = engine.run((durable, prompt: string) => agent(durable, prompt, deps), "go");
+    engine.complete(await log.token, answer);
+    const result = await running;
+    assert.match(result.text, /c=\{"status":"rejected"\}/, JSON.stringify(answer));
+    assert.equal(log.executed, 0);
+  }
 });
 
 test("memory engine: crash after every journaled operation still converges", async () => {

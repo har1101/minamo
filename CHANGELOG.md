@@ -11,6 +11,7 @@ All packages (`@minamojs/minamo`, `@minamojs/lambda-df`) share one version.
 - **Breaking** `@minamojs/minamo`: `runTools` throws before running any tool when a call ID is not a non-empty string or repeats within the turn. Before, a repeated ID opened two scopes with one name (the memory engine failed midway; Lambda ran both calls with the same idempotency key and two results with one ID).
 - `@minamojs/minamo`: `runTools` checks that a replayed tool result names the call's ID and tool, and throws on a mismatch instead of handing one call's result to another.
 - `@minamojs/minamo`: `runTools` looks a tool up among the own properties of `tools` only, so a model-chosen name such as `constructor` is an unknown tool.
+- README and `examples/lambda-bedrock`: approvals accept only `approved === true` (before, `if (!approved)` approved `{"approved": "false"}`), and a new Security section covers approval tokens, what the journal keeps, and model-chosen tool input.
 
 ## 0.1.0-alpha.1 (2026-09-25)
 

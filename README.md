@@ -46,8 +46,9 @@ const tools: Record<string, Tool> = {
   refund: {
     // Workflow tools may use durable operations: here, wait (without compute cost) until a human answers.
     workflow: async ({ orderId }: { orderId: string }, { durable, idempotencyKey }) => {
-      const { approved } = await durable.signal<{ approved: boolean }>("approval", token => notifyReviewer(orderId, token));
-      if (!approved) return { status: "rejected" };
+      const answer = await durable.signal<{ approved?: unknown } | null>("approval", token => notifyReviewer(orderId, token));
+      // Approve only an explicit `true`: "false", "yes", 1, or a missing field all reject.
+      if (answer?.approved !== true) return { status: "rejected" };
       return durable.step("refund", () => payments.refund(orderId, { idempotencyKey }));
     },
   },
@@ -137,6 +138,12 @@ const result = await running;
 - **At-least-once.** A tool can run again if the process stops after its side effect and before its result is recorded. Use `idempotencyKey` with external APIs.
 - **Determinism.** Code outside steps runs again on every replay. It must make the same durable calls in the same order.
 - **Lambda quotas.** An execution can have up to 30,000 durable operations and can write up to 100 MB of checkpoint data in total. Each durable operation's payload can be up to 1 MB, a limit that cannot be raised. This covers each step result, such as the events of one model call, and the result that completes a signal. `@minamojs/lambda-df` fails a larger step with an error that names it; Lambda rejects a larger callback result when it is sent. A scope result over 256 KB is not stored: the SDK runs the scope again on replay and rebuilds the result from the scope's recorded operations. Split long conversations across executions. Invoke a published version or alias, so that replays run the same code.
+
+## Security
+
+- **Approvals.** On Lambda, the token that `publish` receives is a callback ID. Anyone who has it and may call `lambda:SendDurableExecutionCallbackSuccess` on the function can answer, and minamo does not know who answered. Send tokens only to your approval backend, never to the user who asked for the action, and do not log them. The backend must authenticate the approver and check that this person may approve this request. Validate the answer in the tool, as in the example: approve only `approved === true`, because `"false"` is truthy. Set a `timeout`.
+- **What the journal keeps.** Recorded model events, tool inputs, tool results, and tool error messages stay in the execution's checkpoints as plain JSON for its retention period. Grant `lambda:GetDurableExecution*` only to principals that may see this data, and keep secrets out of tool results and error messages: errors are shown to the model and recorded.
+- **Model output is input.** Tool inputs and call IDs come from the model, so prompt injection can choose them. Each tool validates its own input. `runTools` rejects a turn with missing or repeated call IDs, and looks tools up among the own properties of `tools` only.
 
 ## Design
 

@@ -46,8 +46,9 @@ const tools: Record<string, Tool> = {
   refund: {
     // workflow ツールは durable なオペレーションを使えます。ここでは人の回答を（計算コストなしで）待ちます。
     workflow: async ({ orderId }: { orderId: string }, { durable, idempotencyKey }) => {
-      const { approved } = await durable.signal<{ approved: boolean }>("approval", token => notifyReviewer(orderId, token));
-      if (!approved) return { status: "rejected" };
+      const answer = await durable.signal<{ approved?: unknown } | null>("approval", token => notifyReviewer(orderId, token));
+      // 明示的な `true` だけを承認とみなす。"false"、"yes"、1、フィールドなしはすべて却下
+      if (answer?.approved !== true) return { status: "rejected" };
       return durable.step("refund", () => payments.refund(orderId, { idempotencyKey }));
     },
   },
@@ -137,6 +138,12 @@ const result = await running;
 - **at-least-once**: 副作用の後、結果を記録する前にプロセスが止まると、ツールがもう一度実行されることがあります。外部の API には `idempotencyKey` を使ってください。
 - **決定性**: step の外のコードは、リプレイのたびにもう一度実行されます。同じ durable な呼び出しを同じ順序で行う必要があります。
 - **Lambda のクォータ**: 1 つの実行で使えるのは、durable オペレーション 30,000 個、書き込むチェックポイントは累計 100 MB までです。1 つの durable オペレーションのペイロードは 1 MB までで、この上限は引き上げられません。対象は step の結果（1 回のモデル呼び出しのイベントなど）と、signal を完了させるときに送る結果です。step の結果が上限を超えると、`@minamojs/lambda-df` は step の名前を示すエラーでその step を失敗させます。上限を超えるコールバックの結果は、送るときに Lambda が拒否します。256 KB を超えるスコープの結果は記録されず、リプレイのときに SDK がスコープをもう一度実行して、記録済みのオペレーションから結果を組み立て直します。長い会話は複数の実行に分けます。リプレイで同じコードが動くように、公開したバージョンかエイリアスを呼び出します。
+
+## セキュリティ
+
+- **承認**: Lambda では、`publish` が受け取るトークンはコールバック ID です。これを持ち、関数に対して `lambda:SendDurableExecutionCallbackSuccess` を呼べる人なら誰でも答えられ、minamo は誰が答えたかを知りません。トークンは承認用のバックエンドにだけ送り、操作を頼んだ利用者には渡さず、ログにも出さないでください。バックエンドは承認者を認証し、その人がこの依頼を承認してよいかを確認します。答えはツールの中で検証します。例のように `approved === true` だけを承認とみなしてください。`"false"` は truthy だからです。`timeout` も設定します。
+- **ジャーナルに残るもの**: 記録したモデルのイベント、ツールの入力と結果、ツールのエラーメッセージは、実行の保持期間のあいだ、チェックポイントに JSON のまま残ります。`lambda:GetDurableExecution*` は、このデータを見てよいプリンシパルにだけ許可してください。ツールの結果やエラーメッセージに秘密情報を入れないでください。エラーはモデルに見せたうえで記録されます。
+- **モデルの出力は入力**: ツールの入力と呼び出し ID はモデルが決めるので、プロンプトインジェクションで操作され得ます。入力は各ツールが検証します。`runTools` は、呼び出し ID がないターンや重複したターンを拒否し、ツールは `tools` 自身のプロパティからだけ探します。
 
 ## 設計
 
