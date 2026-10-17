@@ -11,6 +11,7 @@ All packages (`@minamojs/minamo`, `@minamojs/lambda-df`) share one version.
 - `@minamojs/minamo`: `runTools` rejects a turn that repeats a call id, before any tool runs. Before, the memory engine failed with a duplicate operation name and Lambda ran both calls, whose results the model could not tell apart.
 - `@minamojs/minamo`: `runTools` fails when a replayed tool result names another call id or tool, instead of returning another tool's recorded result.
 - README: a Security section (signal tokens and approvals, tool inputs, what the journal keeps), and the approval examples (README, `examples/lambda-bedrock`) accept only `approved === true`. Before, `{"approved": "false"}` approved the refund.
+- Release workflow: dependency code runs only in a read-only `build` job, with `npm ci --ignore-scripts`; the `publish` job, which holds `contents: write` and the npm OIDC token, installs no dependencies and publishes the tarballs built and checksummed by `build`. Releases attach `SHA256SUMS`. CI also installs with `--ignore-scripts`. Actions are pinned to commit SHAs and updated by Dependabot.
 
 ## 0.1.0-alpha.1 (2026-09-25)
 
