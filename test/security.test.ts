@@ -23,6 +23,16 @@ test("codec: data shaped like a bytes marker round-trips as data", () => {
   assert.deepEqual(parse('{"$bytes":1}'), { $bytes: 1 }, "a non-string marker written by 0.1.0-alpha.1 is data");
 });
 
+test("codec: a multi-megabyte string round-trips in linear time", () => {
+  const text = "x".repeat(4 * 1024 * 1024);
+  const started = performance.now();
+  const decoded = parse<{ text: string; list: string[] }>(stringify({ text, list: [text] }));
+  const elapsed = performance.now() - started;
+  assert.equal(decoded.text, text);
+  assert.equal(decoded.list[0], text);
+  assert.ok(elapsed < 200, `${Math.round(elapsed)} ms`);
+});
+
 test("codec: an own __proto__ key round-trips without touching any prototype", () => {
   const value = JSON.parse('{"__proto__":{"$bytes":"AA=="}}');
   const decoded = parse<Record<string, unknown>>(stringify(value));

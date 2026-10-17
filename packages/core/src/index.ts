@@ -48,7 +48,9 @@ export interface Durable {
 const BYTES = "$bytes";
 
 function marker(value: unknown): string | undefined {
-  const keys = Object.keys(value ?? 0);
+  // Object.keys on a string or array allocates one key per index.
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const keys = Object.keys(value);
   return keys.length === 1 && /^\$+bytes$/.test(keys[0]) ? keys[0] : undefined;
 }
 
