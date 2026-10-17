@@ -175,12 +175,28 @@ const defaultToolRetry: Retry = {
  * so completion order never changes operation identity.
  */
 export async function runTools(durable: Durable, turn: string, calls: readonly ToolCall[], tools: Record<string, Tool>): Promise<ToolResult[]> {
-  // Inputs are model output and are not validated here; each tool validates its own input.
+  // Inputs are model output and are not validated here; each tool validates its own input. IDs are validated,
+  // because results are matched to calls by ID: a repeated ID would give two calls one scope and one key.
+  const ids = new Set<string>();
+  for (const { id } of calls) {
+    if (typeof id !== "string" || id === "") throw new Error(`Tool calls of ${turn} need a non-empty string ID, got ${JSON.stringify(id)}`);
+    if (ids.has(id)) throw new Error(`Tool calls of ${turn} repeat the ID ${JSON.stringify(id)}; calls in one turn need distinct IDs`);
+    ids.add(id);
+  }
   const names = calls.map(call => `${turn}:${call.id}`);
   // Keys first, so that no await separates the scopes and every tool starts in call order.
   const keys = await Promise.all(names.map(name => idempotencyKey(durable.executionId, [...durable.path, name])));
-  return Promise.all(calls.map((call, index) =>
-    durable.scope(names[index], child => runTool(child, call, tools[call.name], keys[index]))));
+  return Promise.all(calls.map(async (call, index) => {
+    // Own properties only: a model-chosen name such as "constructor" must not find Object.prototype members.
+    const tool = Object.hasOwn(tools, call.name) ? tools[call.name] : undefined;
+    const result = await durable.scope(names[index], child => runTool(child, call, tool, keys[index]));
+    // A replayed result must belong to this call. A mismatch means the journal and the code disagree, for example
+    // after a nondeterministic change; continuing would hand one call's result to another.
+    if (result?.id !== call.id || result.name !== call.name) {
+      throw new Error(`Journal mismatch: ${names[index]} (${call.name}) replayed the result of ${result?.id} (${result?.name})`);
+    }
+    return result;
+  }));
 }
 
 /** SHA-256 hex digest of a scope's identity. JSON keeps the parts apart even if a name contains a separator. */

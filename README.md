@@ -101,7 +101,9 @@ Runs one turn's tool calls concurrently and returns their results in call order.
 - A tool with `run` is a plain tool: one step.
 - A tool with `workflow` gets its own `Durable` and may use steps, scopes, and signals, for example approvals or sub-agents.
 - Throw `RetryableError` to retry a plain tool's step (default: 3 attempts with exponential backoff). Any other error is recorded once as an error result that the model sees. Set `retry` on a tool to change this.
-- Unknown tools, exhausted retries, and failed workflows also become error results, so the model can react.
+- Unknown tools, exhausted retries, and failed workflows also become error results, so the model can react. A tool is found only among the own properties of `tools`.
+- Call IDs must be non-empty strings, distinct within the turn; otherwise `runTools` throws before any tool runs. Results are matched to calls by ID, so a repeated ID cannot be answered correctly.
+- A replayed result must name the same call ID and tool as the call; otherwise `runTools` throws, because the journal and the code disagree.
 - Every tool receives `idempotencyKey`, which stays the same on every retry, replay, and resume, and differs for every other tool call. Pass it to external APIs. It is a SHA-256 hex digest of the execution ID and the path of the call's scope, so it does not reveal the execution ID, and a call ID that the provider reuses in a later turn or in a nested agent gets a different key.
 - Every tool also receives `call`, the `ToolCall` it runs, for example to key progress events by `call.id`.
 

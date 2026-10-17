@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { withDurableExecution } from "@aws/durable-execution-sdk-js";
 import { LocalDurableTestRunner } from "@aws/durable-execution-sdk-js-testing";
-import { parse, stringify, type Tool, type ToolCall } from "@minamojs/minamo";
+import { parse, stringify, type Durable, type Tool, type ToolCall } from "@minamojs/minamo";
 import { lambda } from "@minamojs/lambda-df";
 import { MemoryEngine } from "@minamojs/minamo/memory";
 import { agent, scripted, type Provider } from "./agent.js";
@@ -130,4 +130,54 @@ test("Lambda engine: a call ID reused in a later turn or a nested agent gets its
     assert.match(key, /^[0-9a-f]{64}$/);
     assert.ok(!key.includes(arn));
   }
+});
+
+test("memory engine: a turn that repeats a call ID fails before any tool runs", async () => {
+  const { keys, tools } = refunds();
+  const provider = reusing([[
+    { id: "call_0", name: "refund", input: { amount: 10 } },
+    { id: "call_0", name: "refund", input: { amount: 20 } },
+  ]]);
+  await assert.rejects(
+    new MemoryEngine().run((durable, prompt: string) => agent(durable, prompt, { provider, tools }), "go"),
+    /Tool calls of tools-1 repeat the ID "call_0"/,
+  );
+  assert.deepEqual(keys, []);
+});
+
+test("Lambda engine: a turn that repeats a call ID fails instead of running both under one key", async t => {
+  await LocalDurableTestRunner.setupTestEnvironment({ skipTime: true });
+  t.after(() => LocalDurableTestRunner.teardownTestEnvironment());
+  const { keys, tools } = refunds();
+  const provider = reusing([[
+    { id: "call_0", name: "refund", input: { amount: 10 } },
+    { id: "call_0", name: "refund", input: { amount: 20 } },
+  ]]);
+  const handler = withDurableExecution(async (_event: unknown, context) => (await agent(lambda(context), "go", { provider, tools })).text);
+  const execution = await new LocalDurableTestRunner({ handlerFunction: handler }).run({ payload: {} });
+
+  assert.equal(execution.getStatus(), "FAILED");
+  assert.match(execution.getError()?.errorMessage ?? "", /repeat the ID "call_0"/);
+  assert.deepEqual(keys, []);
+});
+
+test("memory engine: a call without a string ID fails, and a tool name never finds inherited members", async () => {
+  const run = (calls: ToolCall[]) => new MemoryEngine().run((durable, prompt: string) => agent(durable, prompt, { provider: reusing([calls]), tools: {} }), "go");
+  await assert.rejects(run([{ id: undefined as never, name: "refund", input: {} }]), /need a non-empty string ID, got undefined/);
+  const result = await run([{ id: "a", name: "constructor", input: {} }, { id: "b", name: "toString", input: {} }]);
+  assert.equal(result.text, "a!Unknown tool: constructor, b!Unknown tool: toString");
+});
+
+test("memory engine: a replayed tool result that belongs to another call fails the execution", async () => {
+  const { tools } = refunds();
+  const provider = reusing([[{ id: "a", name: "refund", input: { amount: 10 } }]]);
+  const engine = new MemoryEngine();
+  const handler = (durable: Durable, prompt: string) => agent(durable, prompt, { provider, tools });
+  assert.equal((await engine.run(handler, "go")).text, 'a={"refunded":10}');
+
+  // Same journal, but the recorded result now names another tool, as after a nondeterministic code change.
+  const entry = engine.journal.get("tools-1:a")!;
+  assert.ok(entry.ok);
+  engine.journal.set("tools-1:a", { ok: true, text: entry.text.replace('"name":"refund"', '"name":"delegate"') });
+  await assert.rejects(engine.run(handler, "go"), /Journal mismatch: tools-1:a \(refund\) replayed the result of a \(delegate\)/);
 });
