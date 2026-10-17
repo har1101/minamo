@@ -1,29 +1,33 @@
 name: Release
 
-# On a version tag (v1.2.3 or v1.2.3-alpha.1): test, pack every package, attach the tarballs to a GitHub release,
-# and publish them to npm through trusted publishing (OIDC, no token). A prerelease goes to the dist-tag named by its
-# identifier (alpha, beta, rc); a release goes to `latest`. Versions already on npm are skipped, so a rerun is safe.
+# On a version tag (v1.2.3 or v1.2.3-alpha.1): test and pack every package without secrets or write permissions,
+# attach the tarballs and SHA256SUMS to a GitHub release, and publish the same tarballs to npm through trusted
+# publishing (OIDC, no token). A prerelease goes to the dist-tag named by its identifier (alpha, beta, rc); a release
+# goes to `latest`. Versions already on npm are skipped, so a rerun is safe.
+#
+# Only the jobs that need them get write permissions or an OIDC token, and none of them installs dependencies, so a
+# dependency's code never runs with them. Configure required reviewers on the `npm` environment so that every
+# publish needs a manual approval.
 on:
   push:
     tags: ["v*"]
 
 permissions:
-  contents: write # create the GitHub release
-  id-token: write # npm trusted publishing and provenance
+  contents: read
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
-      - run: npm install -g npm@^11.5.1 # trusted publishing needs npm 11.5.1 or later
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - name: Check tag matches every package version
         run: |
           for package in packages/*/; do
@@ -33,14 +37,51 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm pack -w @minamojs/minamo -w @minamojs/lambda-df
+      - run: sha256sum minamojs-*.tgz > SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: packages
+          path: |
+            minamojs-*.tgz
+            SHA256SUMS
+          if-no-files-found: error
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the GitHub release
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: packages
       - name: Create GitHub release
         run: |
           if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then exit 0; fi
           prerelease=()
           if [[ "${GITHUB_REF_NAME}" == *-* ]]; then prerelease=(--prerelease); fi
-          gh release create "${GITHUB_REF_NAME}" minamojs-*.tgz --title "${GITHUB_REF_NAME}" --generate-notes "${prerelease[@]}"
+          gh release create "${GITHUB_REF_NAME}" minamojs-*.tgz SHA256SUMS --title "${GITHUB_REF_NAME}" --generate-notes "${prerelease[@]}"
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+
+  publish:
+    needs: [build, github-release]
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing and provenance
+    steps:
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24 # bundles npm 11.5.1 or later, which trusted publishing needs
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: packages
+      - name: Verify the tarballs
+        run: sha256sum --check SHA256SUMS
       - name: Publish to npm
         run: |
           version="${GITHUB_REF_NAME#v}"
