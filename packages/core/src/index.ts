@@ -168,9 +168,21 @@ const defaultToolRetry: Retry = {
  */
 export async function runTools(durable: Durable, turn: string, calls: readonly ToolCall[], tools: Record<string, Tool>): Promise<ToolResult[]> {
   // Inputs are model output and are not validated here; each tool validates its own input.
-  const names = calls.map(call => `${turn}:${call.id}`);
+  const ids = calls.map(call => call.id);
+  const repeated = ids.find((id, i) => ids.indexOf(id) !== i);
+  if (repeated !== undefined) {
+    // Scopes are named by call ID, so two calls would share one journal entry and one idempotency key.
+    throw new Error(`Tool calls of turn ${JSON.stringify(turn)} repeat call ID ${JSON.stringify(repeated)}; each call needs its own ID`);
+  }
+  const names = ids.map(id => `${turn}:${id}`);
   const keys = await Promise.all(names.map(name => idempotencyKey([durable.executionId, ...durable.path, name])));
-  return Promise.all(calls.map((call, i) => durable.scope(names[i], child => runTool(child, call, tools[call.name], keys[i]))));
+  return Promise.all(calls.map(async (call, i) => {
+    const result = await durable.scope(names[i], child => runTool(child, call, tools[call.name], keys[i]));
+    if (result.id !== call.id || result.name !== call.name) {
+      throw new Error(`Journal mismatch: tool call ${JSON.stringify(call.id)} (${call.name}) replayed the result of ${JSON.stringify(result.id)} (${result.name}). Make the same calls on every invocation.`);
+    }
+    return result;
+  }));
 }
 
 async function runTool(durable: Durable, call: ToolCall, tool: Tool | undefined, idempotencyKey: string): Promise<ToolResult> {

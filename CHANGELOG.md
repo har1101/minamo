@@ -9,6 +9,8 @@ All packages (`@minamojs/minamo`, `@minamojs/lambda-df`) share one version.
 - **Breaking:** `@minamojs/minamo`: `ToolContext.idempotencyKey` is the SHA-256 hex digest of the execution ID and the tool call's scope path, instead of `<executionId>#<call id>`. It no longer passes the execution ID (on Lambda, the execution ARN) to the APIs that receive it, and it no longer collides when a provider reuses a call ID in a later turn, in another scope, or in a nested agent (before, a deduplicating API dropped the second call). It is still stable across retries, replays, and resumes. A tool call that started on an earlier version gets a different key after the upgrade.
 - **Breaking:** `@minamojs/minamo`: `Durable` has `path`, the names of the scopes it runs in. Engines must provide it; `@minamojs/lambda-df` and `@minamojs/minamo/memory` do.
 - `@minamojs/minamo`: `runTools` opens its scopes after hashing the keys, so it no longer opens them synchronously when called. They still open in call order before any tool starts.
+- `@minamojs/minamo`: `runTools` rejects a turn whose calls repeat a call ID, before any tool starts. Before, the memory engine failed with a duplicate operation name after the first tool had started, and on Lambda both calls ran with the same idempotency key.
+- `@minamojs/minamo`: on replay, `runTools` rejects a recorded tool result whose call ID or tool name differs from the call it is replayed for, instead of handing it to the model.
 
 ## 0.1.0-alpha.1 (2026-09-25)
 

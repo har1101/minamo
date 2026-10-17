@@ -86,3 +86,29 @@ test("Lambda engine: idempotency keys are distinct per tool call and stable acro
   assert.equal(seen.nested.length, 1);
   assert.notEqual(seen.nested[0], seen.before, "a nested call with the same turn and call ID gets another key");
 });
+
+test("Lambda engine: a turn that repeats a call ID fails before any tool runs", async t => {
+  await LocalDurableTestRunner.setupTestEnvironment({ skipTime: true });
+  t.after(() => LocalDurableTestRunner.teardownTestEnvironment());
+  const refunded: number[] = [];
+  const tools: Record<string, Tool> = { refund: { run: async ({ amount }: { amount: number }) => refunded.push(amount) } };
+  const handler = withDurableExecution(async (_event: unknown, context) =>
+    runTools(lambda(context), "tools-1", [refund("call_0", 10), refund("call_0", 20)], tools));
+  const execution = await new LocalDurableTestRunner({ handlerFunction: handler }).run({ payload: {} });
+
+  assert.equal(execution.getStatus(), "FAILED");
+  assert.match(execution.getError()?.errorMessage ?? "", /repeat call ID "call_0"/);
+  assert.deepEqual(refunded, []);
+});
+
+test("memory engine: a replayed tool result must belong to the same call and tool", async () => {
+  const tools: Record<string, Tool> = {
+    lookup: { run: async () => "lookup result" },
+    transfer: { run: async () => "sent" },
+  };
+  const engine = new MemoryEngine();
+  const turn = (name: string) => (durable: Durable) => runTools(durable, "tools-1", [{ id: "a", name, input: {} }], tools);
+  assert.deepEqual(await engine.run(turn("lookup"), null), [{ id: "a", name: "lookup", status: "ok", output: "lookup result" }]);
+  // The same journal, but the code now makes a different call under the same ID, as after a non-deterministic change.
+  await assert.rejects(engine.run(turn("transfer"), null), /Journal mismatch: tool call "a" \(transfer\) replayed the result of "a" \(lookup\)/);
+});
