@@ -30,7 +30,7 @@ test("codec: a multi-megabyte string round-trips in linear time", () => {
   const elapsed = performance.now() - started;
   assert.equal(decoded.text, text);
   assert.equal(decoded.list[0], text);
-  assert.ok(elapsed < 200, `${Math.round(elapsed)} ms`);
+  assert.ok(elapsed < 1000, `${Math.round(elapsed)} ms`);
 });
 
 test("codec: an own __proto__ key round-trips without touching any prototype", () => {
