@@ -106,7 +106,7 @@ Runs one turn's tool calls concurrently and returns their results in call order.
 
 ### Values
 
-Recorded values are JSON plus `Uint8Array`, which is stored as base64. Engines apply the same codec to every step, scope, and signal.
+Recorded values are JSON plus `Uint8Array`, which is stored as `{"$bytes": base64}`. JSON data of that shape, for example a tool output, is escaped, so it replays as the same data and never as bytes. Engines apply the same codec to every step, scope, and signal.
 
 ## Engines
 

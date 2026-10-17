@@ -5,6 +5,7 @@ All packages (`@minamojs/minamo`, `@minamojs/lambda-df`) share one version.
 ## Unreleased
 
 - `@minamojs/lambda-df`: the step result limit follows Lambda's new quota of 1 MB per durable operation (was 256 KB), so step results between 256 KB and 1 MB no longer fail. Docs state the new quotas: 30,000 operations per execution (was 3,000), 1 MB per step result and per callback result, 100 MB in total.
+- `@minamojs/minamo`: the codec escapes data shaped like its bytes marker. Before, a value such as a tool output `{"$bytes": "aGk="}` came back as a `Uint8Array` (live and on replay). **Breaking** for journals written by earlier versions that contain a one-key object `{"$$bytes": …}` (or more `$`): it now reads as `{"$bytes": …}`. Keep executions started on an earlier version running on that version (invoke a published version or alias).
 
 ## 0.1.0-alpha.1 (2026-09-25)
 

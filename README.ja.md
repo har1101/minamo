@@ -106,7 +106,7 @@ Amazon Bedrock の Converse を使い、そのままデプロイできる完全�
 
 ### 値
 
-記録する値は、JSON と `Uint8Array` です。`Uint8Array` は base64 で保存します。エンジンは、step、scope、signal のすべてに同じコーデックを使います。
+記録する値は、JSON と `Uint8Array` です。`Uint8Array` は `{"$bytes": base64}` の形で保存します。ツールの出力などで同じ形をした JSON はエスケープするため、リプレイしても同じデータのままで、バイト列にはなりません。エンジンは、step、scope、signal のすべてに同じコーデックを使います。
 
 ## エンジン
 
