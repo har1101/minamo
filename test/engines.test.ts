@@ -15,7 +15,7 @@ const EXPECTED = 'Done: a="SLOW", b="FAST", c={"status":"sent","amount":100}';
 /** Turn 1 asks for a slow lookup, a fast lookup (finishes first), and a transfer that needs human approval. */
 function scenario() {
   const token = Promise.withResolvers<string>();
-  const log = { runs: [] as string[], keys: {} as Record<string, string[]>, callIds: {} as Record<string, string>, executed: 0, published: 0, token: token.promise };
+  const log = { runs: [] as string[], keys: {} as Record<string, string[]>, callIds: {} as Record<string, string>, executionId: "", executed: 0, published: 0, token: token.promise };
   const { provider, counter } = scripted([
     { id: "a", name: "lookup", input: { q: "slow", delayMs: 30 } },
     { id: "b", name: "lookup", input: { q: "fast", delayMs: 1 } },
@@ -31,8 +31,10 @@ function scenario() {
     },
   };
   const transfer: Tool<{ amount: number }> = {
-    workflow: async ({ amount }, { durable, call }) => {
+    workflow: async ({ amount }, { durable, call, idempotencyKey }) => {
       log.callIds.transfer = call.id;
+      (log.keys.transfer ??= []).push(idempotencyKey);
+      log.executionId = durable.executionId;
       const answer = await durable.signal<{ approved: boolean }>("approval", async t => {
         log.published++;
         token.resolve(t);
@@ -146,6 +148,9 @@ test("Lambda engine: the same agent suspends on a durable callback and replays o
   assert.deepEqual(log.runs, ["slow", "fast"], "completed lookups are not re-run on resume");
   assert.equal(log.executed, 1);
   assert.ok(execution.getInvocations().length >= 2, "the execution suspended and resumed");
+  assert.ok(log.keys.transfer!.length >= 2, "the workflow ran again after the resume");
+  assert.equal(new Set(log.keys.transfer).size, 1, "the resumed workflow sees the same idempotency key");
+  assert.ok(log.executionId && !log.keys.transfer![0]!.includes(log.executionId), "the key does not reveal the execution ARN");
 
   const operations = execution.getOperations();
   const names = new Map(operations.map(op => [op.getId(), op.getName()]));

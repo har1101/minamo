@@ -72,66 +72,70 @@ export class MemoryEngine {
       throw new Error(entry.error);
     };
 
-    const durable = (prefix: string): Durable => ({
-      executionId: engine.executionId,
-      async step(name, fn, options) {
-        const path = prefix + name;
-        claim(path);
-        const done = engine.journal.get(path);
-        if (done) return replay(done) as never;
-        inflight++;
-        try {
-          for (let attempt = 1; ; attempt++) {
-            try {
-              const text = stringify(await fn({ attempt } satisfies StepInfo));
-              record(path, { ok: true, text });
-              return parse(text);
-            } catch (error) {
-              if (error === CRASH || !(error instanceof Error)) throw error;
-              const retry = options?.retry;
-              if (retry && attempt < retry.maxAttempts && (retry.when?.(error) ?? true)) continue;
-              record(path, { ok: false, error: error.message });
-              throw error;
+    const durable = (scopes: readonly string[]): Durable => {
+      const prefix = scopes.map(name => `${name}/`).join("");
+      return {
+        executionId: engine.executionId,
+        path: scopes,
+        async step(name, fn, options) {
+          const path = prefix + name;
+          claim(path);
+          const done = engine.journal.get(path);
+          if (done) return replay(done) as never;
+          inflight++;
+          try {
+            for (let attempt = 1; ; attempt++) {
+              try {
+                const text = stringify(await fn({ attempt } satisfies StepInfo));
+                record(path, { ok: true, text });
+                return parse(text);
+              } catch (error) {
+                if (error === CRASH || !(error instanceof Error)) throw error;
+                const retry = options?.retry;
+                if (retry && attempt < retry.maxAttempts && (retry.when?.(error) ?? true)) continue;
+                record(path, { ok: false, error: error.message });
+                throw error;
+              }
             }
+          } finally {
+            inflight--;
+            checkIdle();
           }
-        } finally {
-          inflight--;
+        },
+        async scope(name, fn) {
+          const path = prefix + name;
+          claim(path);
+          const done = engine.journal.get(path);
+          if (done) return replay(done) as never;
+          let text;
+          try {
+            text = stringify(await fn(durable([...scopes, name])));
+          } catch (error) {
+            if (error !== CRASH && error instanceof Error) record(path, { ok: false, error: error.message });
+            throw error;
+          }
+          record(path, { ok: true, text });
+          return parse(text);
+        },
+        async signal(name, publish) {
+          const path = prefix + name;
+          claim(path);
+          const done = engine.journal.get(path);
+          if (done) return replay(done) as never;
+          // Publishing is journaled like a step, so a replay does not hand out the token twice.
+          const published = `${path}#published`;
+          if (!engine.journal.has(published)) {
+            await publish(path);
+            record(published, { ok: true, text: "null" });
+          }
+          waiting++;
           checkIdle();
-        }
-      },
-      async scope(name, fn) {
-        const path = prefix + name;
-        claim(path);
-        const done = engine.journal.get(path);
-        if (done) return replay(done) as never;
-        let text;
-        try {
-          text = stringify(await fn(durable(`${path}/`)));
-        } catch (error) {
-          if (error !== CRASH && error instanceof Error) record(path, { ok: false, error: error.message });
-          throw error;
-        }
-        record(path, { ok: true, text });
-        return parse(text);
-      },
-      async signal(name, publish) {
-        const path = prefix + name;
-        claim(path);
-        const done = engine.journal.get(path);
-        if (done) return replay(done) as never;
-        // Publishing is journaled like a step, so a replay does not hand out the token twice.
-        const published = `${path}#published`;
-        if (!engine.journal.has(published)) {
-          await publish(path);
-          record(published, { ok: true, text: "null" });
-        }
-        waiting++;
-        checkIdle();
-        return new Promise<never>(() => {});
-      },
-    });
+          return new Promise<never>(() => {});
+        },
+      };
+    };
 
-    handler(durable(""), input).then(
+    handler(durable([]), input).then(
       value => { if (!dead) { dead = true; stop.resolve({ done: true, value }); } },
       error => { if (!dead) { dead = true; stop.reject(error); } },
     );

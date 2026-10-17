@@ -25,6 +25,8 @@ export type StepInfo = { attempt: number };
 export interface Durable {
   /** Stable for the whole execution, across replays and resumes. */
   readonly executionId: string;
+  /** Names of the scopes this `Durable` runs in, outermost first; empty at the root. */
+  readonly path: readonly string[];
   /** Runs `fn` and records its result. Without `retry` it runs once. `fn` must not use durable operations. */
   step<T>(name: string, fn: (info: StepInfo) => Promise<T>, options?: { retry?: Retry }): Promise<T>;
   /** Runs `fn` in a child scope that may use durable operations. A completed scope replays its recorded result. */
@@ -118,7 +120,11 @@ export class RetryableError extends Error {
 export type ToolCall = { id: string; name: string; input: unknown };
 
 export type ToolContext = {
-  /** `<executionId>#<tool call id>`: identical on every retry, replay, and resume. Pass it to external APIs. */
+  /**
+   * Identical on every retry, replay, and resume, and different for every tool call of the execution, even when a
+   * provider reuses a call id in another turn or in a nested agent. Pass it to external APIs. A SHA-256 hex digest
+   * of the execution id, the enclosing scopes, the turn, and the call id, so it does not reveal the execution id.
+   */
   idempotencyKey: string;
   /** The call being run, e.g. to key progress events by `call.id`. */
   call: ToolCall;
@@ -147,18 +153,37 @@ const defaultToolRetry: Retry = {
 
 /**
  * Runs one model turn's tool calls concurrently. Each call gets its own scope, opened synchronously in call order,
- * so completion order never changes operation identity.
+ * so completion order never changes operation identity. A turn that repeats a call id is rejected.
  */
-export function runTools(durable: Durable, turn: string, calls: readonly ToolCall[], tools: Record<string, Tool>): Promise<ToolResult[]> {
+export async function runTools(durable: Durable, turn: string, calls: readonly ToolCall[], tools: Record<string, Tool>): Promise<ToolResult[]> {
   // Inputs are model output and are not validated here; each tool validates its own input.
-  return Promise.all(calls.map(call => durable.scope(`${turn}:${call.id}`, child => runTool(child, call, tools[call.name]))));
+  const ids = new Set<string>();
+  for (const { id } of calls) {
+    // Results are matched to calls by id, by the model and by the scope name; a repeat would mix them up.
+    if (ids.has(id)) throw new Error(`Turn ${turn} repeats tool call id ${JSON.stringify(id)}; tool calls in one turn need distinct ids`);
+    ids.add(id);
+  }
+  const key = (call: ToolCall) => digest([durable.executionId, ...durable.path, turn, call.id]);
+  return Promise.all(calls.map(call => durable.scope(`${turn}:${call.id}`, async child => runTool(child, call, tools[call.name], await key(call)))
+    .then(result => {
+      // A changed journal or nondeterministic agent code must not hand one call's recorded result to another.
+      if (result?.id !== call.id || result.name !== call.name) {
+        throw new Error(`Journal mismatch: tool call ${JSON.stringify(call.id)} (${call.name}) replayed the result of ${JSON.stringify(result?.id)} (${result?.name})`);
+      }
+      return result;
+    })));
 }
 
-async function runTool(durable: Durable, call: ToolCall, tool: Tool | undefined): Promise<ToolResult> {
+async function digest(parts: readonly string[]): Promise<string> {
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(parts)));
+  return Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function runTool(durable: Durable, call: ToolCall, tool: Tool | undefined, idempotencyKey: string): Promise<ToolResult> {
   const input = call.input as never;
   const base = { id: call.id, name: call.name };
   if (!tool) return { ...base, status: "error", error: `Unknown tool: ${call.name}` };
-  const ctx: ToolContext = { idempotencyKey: `${durable.executionId}#${call.id}`, call };
+  const ctx: ToolContext = { idempotencyKey, call };
   try {
     if (tool.workflow) return { ...base, status: "ok", output: await tool.workflow(input, { ...ctx, durable }) };
     const retry = tool.retry ?? defaultToolRetry;

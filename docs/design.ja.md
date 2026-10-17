@@ -21,7 +21,7 @@ Hono との対応:
 | --- | --- |
 | Web 標準の `Request`/`Response` | `Durable` インターフェース（`step`、`scope`、`signal`）と、JSON + `Uint8Array` のコーデック |
 | ランタイムのアダプター（`hono/aws-lambda` など） | エンジンのパッケージ（`@minamojs/lambda-df`、`@minamojs/minamo/memory`） |
-| 依存ゼロの小さなコア | 依存ゼロで、`node:` の API を使わない。コアは minify 後 2 KB 未満（gzip 後で約 1 KB） |
+| 依存ゼロの小さなコア | 依存ゼロで、`node:` の API を使わない。コアは minify 後 3 KB 未満（gzip 後で約 1.3 KB） |
 | `app.request()` でサーバーなしにテストできる | `@minamojs/minamo/memory` で AWS なしにテストでき、任意の地点でクラッシュさせられる |
 
 ### 既存のものとの違い（2026-09-24 時点）
@@ -48,7 +48,7 @@ Hono との対応:
 
 1. **オペレーションの同一性は「一意で決定的な名前」と「固定した開始順」の両方で決まるようにします。** Cloudflare Workflows は名前で、Lambda は呼び出し順で、記録済みの結果を対応付けます。`runTools()` は、ツール呼び出しごとのスコープを `<turn>:<toolCallId>` という名前で、呼び出し順に同期的に開きます。ツールの完了順が変わっても、同一性は変わりません。Lambda の SDK は、オペレーションを呼んだ時点で ID を決めて実行を始めます（`await` を待ちません）。そのため、呼び出し順を保つのは、コアがオペレーションを決まった順序で同期的に呼ぶことです。アダプターの `Promise.resolve` は、SDK の `DurablePromise`（thenable）を普通の `Promise` に変えるだけです。
 2. **コーデックはエンジンの境界に置きます。** エンジンが保存するすべての値（step、scope、signal）を同じコーデックに通します。最初はモデルとツールの関数の中で変換していましたが、スコープの戻り値を通るときに `Uint8Array` が `{"0":1,...}` に壊れました。大きな値の S3 への退避（オフロード）を作るときも、このコーデックを包む serdes にします。Lambda のアダプターは step の結果を step の中でシリアライズし、1 つのオペレーションの記録の上限（1 MB、引き上げ不可）を超えたらその step を失敗させます。SDK は step の記録の大きさを検査しないため、そのままではチェックポイントの呼び出しが失敗するからです。scope の結果は検査しません。SDK は大きな子コンテキストの結果（SDK 2.4.0 では 256 KB 超）を記録せず、子の記録から組み立て直す（ReplayChildren）からです。signal の回答の上限（1 MB）は、コールバックを送るときに Lambda が検査します。
-3. **`AsyncLocalStorage` を使わず、コンテキストは引数で渡します。** ツールは `idempotencyKey`、`call`、`attempt`、`durable` を引数で受け取ります。こうすると Web 標準の API だけで書けます。Bun でも動くことを確認しました。LLRT で動くかは未確認です。
+3. **`AsyncLocalStorage` を使わず、コンテキストは引数で渡します。** ツールは `idempotencyKey`、`call`、`attempt`、`durable` を引数で受け取ります。スコープの入れ子は `Durable.path` でたどります。`idempotencyKey` は `[executionId, ...path, turn, call id]` の SHA-256（`crypto.subtle`）です。call id はツール呼び出しの一意な ID ではありません。プロバイダーは別のターンやネストしたエージェントで同じ ID を使うことがあり、以前の `<executionId>#<call id>` ではキーが衝突して、重複を排除する API が 2 回目の呼び出しを捨てていました。実行 ID（Lambda では関数とアカウントを含む ARN）を下流の API に渡さないことも目的です。同じターンの重複した call id は拒否し、リプレイした結果の call id とツール名を照合します。こうすると Web 標準の API だけで書けます。Bun でも動くことを確認しました。LLRT で動くかは未確認です。
 4. **業務エラーとインフラのリトライを分けます。** ツールの例外は step の中で捕まえ、結果として記録します。リトライするのは、`Retry.when` が真を返すエラー（ツールの既定では `RetryableError`）だけです。`Retry` は宣言的な形（`maxAttempts`、`initialDelay`、`maxDelay`、`backoffRate`、`when`）なので、どのエンジンの設定にも変換できます。
 5. **リトライの既定値はエンジンに任せません。** `step` は、`retry` がなければ 1 回だけ実行します。`signal` の `publish` も 1 回だけ実行します（Lambda では SDK が `publish` を step として実行するため、ここでも SDK の既定のリトライを無効にしています）。Lambda の SDK の既定のリトライには頼りません。エンジンによって振る舞いが変わらないようにするためです。`model()` の既定は、一時的なエラー（スロットリング、service unavailable、internal server、タイムアウト、接続の切断）だけを最大 4 回まで試行します。`5xx` や `429` のような数字では判定しません。「520 tokens」のような検証エラーの文言に誤って一致するからです。
 6. **Human-in-the-loop は、`workflow` ツールの中で `signal` を使って書きます。** コアにフレームワーク固有の割り込み（interrupt）は入れません。
