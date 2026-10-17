@@ -11,7 +11,7 @@
 > [!WARNING]
 > 実験段階の alpha 版（`0.1.0-alpha.1`）です。API は変わります。
 
-- **依存ゼロ**: コアは Web 標準の API だけを使います。`node:` の import、`Buffer`、`AsyncLocalStorage` は使いません。minify 後で 2 KB 未満、gzip 後で約 1 KB です。
+- **依存ゼロ**: コアは Web 標準の API だけを使います。`node:` の import、`Buffer`、`AsyncLocalStorage` は使いません。minify 後で 3 KB 未満、gzip 後で約 1.4 KB です。
 - **ループとモデルは自分で持つ**: minamo はメッセージの形式を決めません。モデルのストリームが返すものを、そのまま記録します。
 - **エンジンはアダプター**: コアは 3 つのオペレーションだけの `Durable` インターフェースを使います。`@minamojs/lambda-df` は、Lambda の durable execution SDK でこれを実装します。2 つ目のエンジンの候補は Cloudflare Workflows です。
 

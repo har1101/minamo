@@ -37,7 +37,10 @@ function encodeStep(name: string, value: unknown): string | undefined {
 // Without `retry` an operation runs once on every engine, instead of falling back to the SDK's default retries.
 const noRetry = () => ({ shouldRetry: false });
 
-/** Lambda durable functions engine. Operation IDs come from call order, which the core keeps fixed. */
+/**
+ * Lambda durable functions engine. Operation IDs come from call order, which the core keeps fixed.
+ * Pass the handler's context; child scopes come from `durable.scope`, which tracks `path`.
+ */
 export function lambda(context: DurableContext): Durable {
   return adapt(context, []);
 }

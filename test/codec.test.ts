@@ -20,6 +20,7 @@ test("codec: data shaped like a codec marker stays data", () => {
     { $esc: null },
     [{ $bytes: "aGk=" }, { nested: { $bytes: "aGk=" } }],
     { $bytes: "aGk=", other: true },
+    { $esc: new Uint8Array([1, 2]) },
   ];
   for (const value of values) assert.deepEqual(roundTrip(value), value, JSON.stringify(value));
   assert.deepEqual(roundTrip({ data: new Uint8Array([104, 105]), note: { $bytes: "aGk=" } }), { data: new Uint8Array([104, 105]), note: { $bytes: "aGk=" } });

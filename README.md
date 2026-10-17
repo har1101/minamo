@@ -11,7 +11,7 @@ Write your agent loop as plain TypeScript. minamo records each model call and ea
 > [!WARNING]
 > Experimental alpha (`0.1.0-alpha.1`). The API will change.
 
-- **No dependencies.** The core uses only Web standard APIs: no `node:` imports, no `Buffer`, no `AsyncLocalStorage`. It is under 2 KB minified and about 1 KB gzipped.
+- **No dependencies.** The core uses only Web standard APIs: no `node:` imports, no `Buffer`, no `AsyncLocalStorage`. It is under 3 KB minified and about 1.4 KB gzipped.
 - **Bring your own loop and model.** minamo does not define a message format. It records whatever your model stream yields.
 - **Engine adapters, not engine lock-in.** The core talks to a three-operation `Durable` interface. `@minamojs/lambda-df` implements it with the Lambda durable execution SDK. Cloudflare Workflows is the candidate for a second engine.
 

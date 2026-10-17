@@ -16,6 +16,8 @@ export const handler = withDurableExecution(async (event: { prompt: string }, co
 
 `lambda(context)` maps minamo's `step`, `scope`, and `signal` to the SDK's `step`, `runInChildContext`, and `waitForCallback`. It stores every value with minamo's codec. Without a `retry` option, a step runs once instead of using the SDK's default retries.
 
+Call `lambda()` on the handler's context only, and open child scopes with `durable.scope`. A `Durable` made from a child context by hand starts with an empty `path`, so its tools could share idempotency keys with the root's.
+
 Peer dependencies: `@minamojs/minamo` and `@aws/durable-execution-sdk-js` 2.x.
 
 See the [repository README](https://github.com/har1101/minamo#readme) and a [deployable example with Amazon Bedrock](https://github.com/har1101/minamo/tree/main/examples/lambda-bedrock).
