@@ -72,10 +72,11 @@ export class MemoryEngine {
       throw new Error(entry.error);
     };
 
-    const durable = (prefix: string): Durable => ({
+    const durable = (scopes: readonly string[]): Durable => ({
       executionId: engine.executionId,
+      path: scopes,
       async step(name, fn, options) {
-        const path = prefix + name;
+        const path = [...scopes, name].join("/");
         claim(path);
         const done = engine.journal.get(path);
         if (done) return replay(done) as never;
@@ -100,13 +101,13 @@ export class MemoryEngine {
         }
       },
       async scope(name, fn) {
-        const path = prefix + name;
+        const path = [...scopes, name].join("/");
         claim(path);
         const done = engine.journal.get(path);
         if (done) return replay(done) as never;
         let text;
         try {
-          text = stringify(await fn(durable(`${path}/`)));
+          text = stringify(await fn(durable([...scopes, name])));
         } catch (error) {
           if (error !== CRASH && error instanceof Error) record(path, { ok: false, error: error.message });
           throw error;
@@ -115,7 +116,7 @@ export class MemoryEngine {
         return parse(text);
       },
       async signal(name, publish) {
-        const path = prefix + name;
+        const path = [...scopes, name].join("/");
         claim(path);
         const done = engine.journal.get(path);
         if (done) return replay(done) as never;
@@ -131,7 +132,7 @@ export class MemoryEngine {
       },
     });
 
-    handler(durable(""), input).then(
+    handler(durable([]), input).then(
       value => { if (!dead) { dead = true; stop.resolve({ done: true, value }); } },
       error => { if (!dead) { dead = true; stop.reject(error); } },
     );

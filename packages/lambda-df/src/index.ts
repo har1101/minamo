@@ -39,9 +39,13 @@ const noRetry = () => ({ shouldRetry: false });
 
 /** Lambda durable functions engine. Operation IDs come from call order, which the core keeps fixed. */
 export function lambda(context: DurableContext): Durable {
-  const executionId = context.executionContext.durableExecutionArn;
+  return adapt(context, []);
+}
+
+function adapt(context: DurableContext, path: readonly string[]): Durable {
   return {
-    executionId,
+    executionId: context.executionContext.durableExecutionArn,
+    path,
     // SDK operations take their ID and start when called, so the core calling them in a fixed order keeps IDs stable.
     // Promise.resolve only turns the SDK's DurablePromise thenable into a real Promise, as `Durable` promises.
     step<T>(name: string, fn: (info: StepInfo) => Promise<T>, options?: { retry?: Retry }) {
@@ -50,7 +54,7 @@ export function lambda(context: DurableContext): Durable {
       })).then(result => result === undefined ? undefined as T : parse<T>(result));
     },
     scope<T>(name: string, fn: (child: Durable) => Promise<T>) {
-      return Promise.resolve(context.runInChildContext(name, child => fn(lambda(child)), { serdes: serdes<T>() }));
+      return Promise.resolve(context.runInChildContext(name, child => fn(adapt(child, [...path, name])), { serdes: serdes<T>() }));
     },
     async signal<T>(name: string, publish: (token: string) => Promise<void>, options?: { timeout?: Duration }) {
       // `publish` runs as the SDK's submitter step, which would otherwise get the SDK's default retries.

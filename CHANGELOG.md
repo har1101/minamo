@@ -6,6 +6,9 @@ All packages (`@minamojs/minamo`, `@minamojs/lambda-df`) share one version.
 
 - `@minamojs/lambda-df`: the step result limit follows Lambda's new quota of 1 MB per durable operation (was 256 KB). Steps between 256 KB and 1 MB no longer fail. The docs now give the new quota of 30,000 operations per execution (was 3,000).
 - `@minamojs/minamo`: the codec escapes data shaped like one of its markers (`{"$bytes": …}`, `{"$esc": …}`) as `{"$esc": data}`. Before, a tool or model result such as `{"$bytes": "aGk="}` came back from the journal as a `Uint8Array`. **Breaking for running executions:** a value written by an earlier version that is a one-key object `{"$esc": x}` now decodes as `x`. Keep executions started on an earlier version on that version (invoke a published version or alias).
+- **Breaking:** `@minamojs/minamo`: `ToolContext.idempotencyKey` is the SHA-256 hex digest of the execution ID and the tool call's scope path, instead of `<executionId>#<call id>`. It no longer passes the execution ID (on Lambda, the execution ARN) to the APIs that receive it, and it no longer collides when a provider reuses a call ID in a later turn, in another scope, or in a nested agent (before, a deduplicating API dropped the second call). It is still stable across retries, replays, and resumes. A tool call that started on an earlier version gets a different key after the upgrade.
+- **Breaking:** `@minamojs/minamo`: `Durable` has `path`, the names of the scopes it runs in. Engines must provide it; `@minamojs/lambda-df` and `@minamojs/minamo/memory` do.
+- `@minamojs/minamo`: `runTools` opens its scopes after hashing the keys, so it no longer opens them synchronously when called. They still open in call order before any tool starts.
 
 ## 0.1.0-alpha.1 (2026-09-25)
 

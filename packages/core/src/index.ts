@@ -25,6 +25,8 @@ export type StepInfo = { attempt: number };
 export interface Durable {
   /** Stable for the whole execution, across replays and resumes. */
   readonly executionId: string;
+  /** Names of the scopes this `Durable` runs in, outermost first; empty at the root. */
+  readonly path: readonly string[];
   /** Runs `fn` and records its result. Without `retry` it runs once. `fn` must not use durable operations. */
   step<T>(name: string, fn: (info: StepInfo) => Promise<T>, options?: { retry?: Retry }): Promise<T>;
   /** Runs `fn` in a child scope that may use durable operations. A completed scope replays its recorded result. */
@@ -129,7 +131,11 @@ export class RetryableError extends Error {
 export type ToolCall = { id: string; name: string; input: unknown };
 
 export type ToolContext = {
-  /** `<executionId>#<tool call id>`: identical on every retry, replay, and resume. Pass it to external APIs. */
+  /**
+   * SHA-256 hex digest of the execution ID and the call's scope path. Identical on every retry, replay, and resume,
+   * and distinct for every tool call of the execution, even if a provider reuses a call ID in another turn or in a
+   * nested agent. Pass it to external APIs; it does not reveal the execution ID.
+   */
   idempotencyKey: string;
   /** The call being run, e.g. to key progress events by `call.id`. */
   call: ToolCall;
@@ -157,19 +163,21 @@ const defaultToolRetry: Retry = {
 };
 
 /**
- * Runs one model turn's tool calls concurrently. Each call gets its own scope, opened synchronously in call order,
- * so completion order never changes operation identity.
+ * Runs one model turn's tool calls concurrently. Each call gets its own scope, opened synchronously in call order
+ * once the idempotency keys are ready, so neither hashing nor completion order changes operation identity.
  */
-export function runTools(durable: Durable, turn: string, calls: readonly ToolCall[], tools: Record<string, Tool>): Promise<ToolResult[]> {
+export async function runTools(durable: Durable, turn: string, calls: readonly ToolCall[], tools: Record<string, Tool>): Promise<ToolResult[]> {
   // Inputs are model output and are not validated here; each tool validates its own input.
-  return Promise.all(calls.map(call => durable.scope(`${turn}:${call.id}`, child => runTool(child, call, tools[call.name]))));
+  const names = calls.map(call => `${turn}:${call.id}`);
+  const keys = await Promise.all(names.map(name => idempotencyKey([durable.executionId, ...durable.path, name])));
+  return Promise.all(calls.map((call, i) => durable.scope(names[i], child => runTool(child, call, tools[call.name], keys[i]))));
 }
 
-async function runTool(durable: Durable, call: ToolCall, tool: Tool | undefined): Promise<ToolResult> {
+async function runTool(durable: Durable, call: ToolCall, tool: Tool | undefined, idempotencyKey: string): Promise<ToolResult> {
   const input = call.input as never;
   const base = { id: call.id, name: call.name };
   if (!tool) return { ...base, status: "error", error: `Unknown tool: ${call.name}` };
-  const ctx: ToolContext = { idempotencyKey: `${durable.executionId}#${call.id}`, call };
+  const ctx: ToolContext = { idempotencyKey, call };
   try {
     if (tool.workflow) return { ...base, status: "ok", output: await tool.workflow(input, { ...ctx, durable }) };
     const retry = tool.retry ?? defaultToolRetry;
@@ -186,4 +194,10 @@ async function runTool(durable: Durable, call: ToolCall, tool: Tool | undefined)
     // Retries exhausted (or a workflow failed): the model sees the failure instead of the execution dying.
     return { ...base, status: "error", error: String(error instanceof Error ? error.message : error) };
   }
+}
+
+/** Hashed, so the key does not pass the execution ID (on Lambda, the execution ARN) on to other services. */
+async function idempotencyKey(scopePath: readonly string[]): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(scopePath))));
+  return Array.from(digest, byte => byte.toString(16).padStart(2, "0")).join("");
 }
