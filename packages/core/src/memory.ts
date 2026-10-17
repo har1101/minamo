@@ -13,6 +13,7 @@ const segment = (name: string) => name.replace(/[%/#]/g, encodeURIComponent);
  * `crash(path)` kills the invocation right after that operation is journaled, to exercise recovery.
  * Retry delays and signal timeouts are not simulated. A signal's token is its operation path.
  * A path joins operation names with `/`, with `%`, `/`, and `#` in each name percent-encoded.
+ * A scope's `id` is the execution ID and the scope's path, readable because nothing here is secret.
  */
 export class MemoryEngine {
   readonly executionId = `memory-${crypto.randomUUID()}`;
@@ -77,7 +78,7 @@ export class MemoryEngine {
     };
 
     const durable = (prefix: string): Durable => ({
-      executionId: engine.executionId,
+      id: `${engine.executionId}/${prefix}`,
       async step(name, fn, options) {
         const path = prefix + segment(name);
         claim(path);

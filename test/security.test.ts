@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { isDeepStrictEqual } from "node:util";
 import { withDurableExecution } from "@aws/durable-execution-sdk-js";
 import { LocalDurableTestRunner } from "@aws/durable-execution-sdk-js-testing";
-import { parse, runTools, stringify, type Tool, type ToolCall } from "@minamojs/minamo";
+import { parse, RetryableError, runTools, stringify, type Durable, type Tool, type ToolCall } from "@minamojs/minamo";
 import { lambda } from "@minamojs/lambda-df";
 import { MemoryEngine } from "@minamojs/minamo/memory";
 
@@ -71,4 +71,87 @@ test("memory engine: a call ID containing / gets its own journal entry", async (
   const calls: ToolCall[] = [{ id: "a", name: "echo", input: 1 }, { id: "a/run", name: "echo", input: 2 }];
   const results = await new MemoryEngine({ crash: () => true }).run(durable => runTools(durable, "tools-1", calls, tools), null);
   assert.deepEqual(results.map(r => r.status === "ok" ? r.output : r.error), [1, 2]);
+});
+
+/**
+ * The provider reuses `call_0` in every turn. Turn 1 delegates to a workflow tool whose nested `runTools` reuses
+ * `tools-1` and `call_0`; turn 2 refunds directly. Every refund attempt records its key and the first one fails.
+ */
+function refunds() {
+  const seen: { amount: number; key: string; invocation: number }[] = [];
+  let invocation = 0;
+  const tools: Record<string, Tool> = {
+    refund: {
+      run: async ({ amount }: { amount: number }, { idempotencyKey, attempt }) => {
+        seen.push({ amount, key: idempotencyKey, invocation });
+        if (attempt === 1) throw new RetryableError("503 from payments");
+        return { refunded: amount };
+      },
+    },
+    delegate: {
+      workflow: async ({ amount }: { amount: number }, { durable }) =>
+        runTools(durable, "tools-1", [{ id: "call_0", name: "refund", input: { amount } }], tools),
+    },
+  };
+  const handler = async (durable: Durable) => {
+    invocation++;
+    return [
+      await runTools(durable, "tools-1", [{ id: "call_0", name: "delegate", input: { amount: 10 } }], tools),
+      await runTools(durable, "tools-2", [{ id: "call_0", name: "refund", input: { amount: 20 } }], tools),
+    ];
+  };
+  const keys = (amount: number) => [...new Set(seen.filter(r => r.amount === amount).map(r => r.key))];
+  const invocations = (amount: number) => new Set(seen.filter(r => r.amount === amount).map(r => r.invocation)).size;
+  return { seen, tools, handler, keys, invocations };
+}
+
+test("memory engine: idempotency keys differ for a reused call ID and a nested runTools, and survive crashes", async () => {
+  const { seen, handler, keys } = refunds();
+  await new MemoryEngine({ crash: () => true }).run(handler, null);
+  assert.ok(seen.length >= 4, "each refund retried at least once");
+  assert.equal(keys(10).length, 1, "one key across every attempt and replay of the nested refund");
+  assert.equal(keys(20).length, 1);
+  assert.notEqual(keys(10)[0], keys(20)[0]);
+});
+
+test("Lambda engine: idempotency keys differ for a reused call ID and a nested runTools, survive resume, and hide the ARN", async t => {
+  await LocalDurableTestRunner.setupTestEnvironment({ skipTime: false });
+  t.after(() => LocalDurableTestRunner.teardownTestEnvironment());
+  const { seen, handler, keys, invocations } = refunds();
+  let arn = "";
+  const execution = await new LocalDurableTestRunner({
+    handlerFunction: withDurableExecution(async (_event: unknown, context) => {
+      arn = context.executionContext.durableExecutionArn;
+      return handler(lambda(context));
+    }),
+  }).run({ payload: {} });
+
+  assert.equal(execution.getStatus(), "SUCCEEDED");
+  assert.equal(seen.length, 4, "each refund retried once");
+  assert.ok(invocations(10) > 1 || invocations(20) > 1, "a retry suspended the execution and a new invocation resumed it");
+  assert.equal(keys(10).length, 1, "one key across the retry and the replays of the nested refund");
+  assert.equal(keys(20).length, 1);
+  assert.notEqual(keys(10)[0], keys(20)[0], "a deduplicating payment API must not drop the second refund");
+  const pieces = arn.split(/[:/-]/).filter(piece => piece.length >= 8);
+  assert.ok(pieces.length > 0);
+  for (const key of [keys(10)[0], keys(20)[0]]) {
+    assert.ok(!key.includes(arn), key);
+    for (const piece of pieces) assert.ok(!key.includes(piece), `${key} contains ${piece}`);
+  }
+});
+
+test("Lambda engine: a repeated operation name in one scope fails the execution, even through a second wrapper", async t => {
+  await LocalDurableTestRunner.setupTestEnvironment({ skipTime: false });
+  t.after(() => LocalDurableTestRunner.teardownTestEnvironment());
+  let second = 0;
+  const execution = await new LocalDurableTestRunner({
+    handlerFunction: withDurableExecution(async (_event: unknown, context) => {
+      await lambda(context).scope("x", async () => 1);
+      return lambda(context).scope("x", async () => ++second);
+    }),
+  }).run({ payload: {} });
+
+  assert.equal(execution.getStatus(), "FAILED");
+  assert.match(execution.getError()?.errorMessage ?? "", /Duplicate durable operation name: x/);
+  assert.equal(second, 0);
 });

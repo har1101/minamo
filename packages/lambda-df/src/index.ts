@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createRetryStrategy, type DurableContext, type Serdes } from "@aws/durable-execution-sdk-js";
 import { parse, stringify, type Duration, type Durable, type Retry, type StepInfo } from "@minamojs/minamo";
 
@@ -37,22 +38,44 @@ function encodeStep(name: string, value: unknown): string | undefined {
 // Without `retry` an operation runs once on every engine, instead of falling back to the SDK's default retries.
 const noRetry = () => ({ shouldRetry: false });
 
-/** Lambda durable functions engine. Operation IDs come from call order, which the core keeps fixed. */
+/** SHA-256 hex. One-way, so an `id` never reveals the execution ARN (account, function, execution name). */
+const digest = (text: string) => createHash("sha256").update(text).digest("hex");
+
+/** Names started on each SDK context, shared by every `Durable` that wraps the same context. */
+const claimed = new WeakMap<DurableContext, Set<string>>();
+
+/** Lambda durable functions engine. Pass the handler's own context; child scopes are derived from it. */
 export function lambda(context: DurableContext): Durable {
-  const executionId = context.executionContext.durableExecutionArn;
+  return wrap(context, digest(context.executionContext.durableExecutionArn));
+}
+
+/** Operation IDs come from call order, which the core keeps fixed. */
+function wrap(context: DurableContext, id: string): Durable {
+  // The SDK accepts a repeated name. minamo rejects it, as name-keyed engines must: unique names keep child ids unique.
+  const claim = (name: string) => {
+    let names = claimed.get(context);
+    if (!names) claimed.set(context, names = new Set());
+    if (names.has(name)) throw new Error(`Duplicate durable operation name: ${name}`);
+    names.add(name);
+  };
   return {
-    executionId,
-    // SDK operations take their ID and start when called, so the core calling them in a fixed order keeps IDs stable.
-    // Promise.resolve only turns the SDK's DurablePromise thenable into a real Promise, as `Durable` promises.
-    step<T>(name: string, fn: (info: StepInfo) => Promise<T>, options?: { retry?: Retry }) {
-      return Promise.resolve(context.step(name, async step => encodeStep(name, await fn({ attempt: step.attempt })), {
+    id,
+    // SDK operations take their ID and start when called, so `claim` and the SDK call both run before the first
+    // `await`: the core calling them in a fixed order keeps IDs stable.
+    async step<T>(name: string, fn: (info: StepInfo) => Promise<T>, options?: { retry?: Retry }) {
+      claim(name);
+      const result = await context.step(name, async step => encodeStep(name, await fn({ attempt: step.attempt })), {
         serdes: passthrough, retryStrategy: options?.retry ? retryStrategy(options.retry) : noRetry,
-      })).then(result => result === undefined ? undefined as T : parse<T>(result));
+      });
+      return result === undefined ? undefined as T : parse<T>(result);
     },
-    scope<T>(name: string, fn: (child: Durable) => Promise<T>) {
-      return Promise.resolve(context.runInChildContext(name, child => fn(lambda(child)), { serdes: serdes<T>() }));
+    async scope<T>(name: string, fn: (child: Durable) => Promise<T>) {
+      claim(name);
+      // A fixed-length parent id makes `id + name` unambiguous without a separator.
+      return context.runInChildContext(name, child => fn(wrap(child, digest(id + name))), { serdes: serdes<T>() });
     },
     async signal<T>(name: string, publish: (token: string) => Promise<void>, options?: { timeout?: Duration }) {
+      claim(name);
       // `publish` runs as the SDK's submitter step, which would otherwise get the SDK's default retries.
       const raw = await context.waitForCallback(name, token => publish(token), {
         retryStrategy: noRetry, ...(options?.timeout && { timeout: seconds(options.timeout) }),

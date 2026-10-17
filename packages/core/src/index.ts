@@ -23,8 +23,11 @@ export type Retry = {
 export type StepInfo = { attempt: number };
 
 export interface Durable {
-  /** Stable for the whole execution, across replays and resumes. */
-  readonly executionId: string;
+  /**
+   * Identifies this scope: the same on every replay and resume, different for every other scope of every execution.
+   * An engine must not put a sensitive execution identifier in it; Lambda hashes the execution ARN.
+   */
+  readonly id: string;
   /** Runs `fn` and records its result. Without `retry` it runs once. `fn` must not use durable operations. */
   step<T>(name: string, fn: (info: StepInfo) => Promise<T>, options?: { retry?: Retry }): Promise<T>;
   /** Runs `fn` in a child scope that may use durable operations. A completed scope replays its recorded result. */
@@ -116,7 +119,10 @@ export class RetryableError extends Error {
 export type ToolCall = { id: string; name: string; input: unknown };
 
 export type ToolContext = {
-  /** `<executionId>#<tool call id>`: identical on every retry, replay, and resume. Pass it to external APIs. */
+  /**
+   * The `id` of the call's scope, opaque. The same on every retry, replay, and resume of this call, and different for
+   * every other call, including a call ID reused in a later turn or in a nested `runTools`. Pass it to external APIs.
+   */
   idempotencyKey: string;
   /** The call being run, e.g. to key progress events by `call.id`. */
   call: ToolCall;
@@ -156,7 +162,7 @@ async function runTool(durable: Durable, call: ToolCall, tool: Tool | undefined)
   const input = call.input as never;
   const base = { id: call.id, name: call.name };
   if (!tool) return { ...base, status: "error", error: `Unknown tool: ${call.name}` };
-  const ctx: ToolContext = { idempotencyKey: `${durable.executionId}#${call.id}`, call };
+  const ctx: ToolContext = { idempotencyKey: durable.id, call };
   try {
     if (tool.workflow) return { ...base, status: "ok", output: await tool.workflow(input, { ...ctx, durable }) };
     const retry = tool.retry ?? defaultToolRetry;
