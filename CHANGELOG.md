@@ -4,7 +4,7 @@ All packages (`@minamojs/minamo`, `@minamojs/lambda-df`) share one version.
 
 ## Unreleased
 
-- Docs: the README has a Security section (explicit approvals, secret signal tokens, no secrets in tool errors, opaque idempotency keys). The core is now about 2.1 KB minified and 1.1 KB gzipped (was under 2 KB and about 1 KB).
+- Docs: the README has a Security section (explicit approvals, secret signal tokens, no secrets in tool errors, opaque idempotency keys). The core is now about 2.3 KB minified and 1.2 KB gzipped (was under 2 KB and about 1 KB).
 - **Breaking:** `@minamojs/minamo`, `@minamojs/lambda-df`: `Durable.signal` returns `Promise<unknown>` and takes no type parameter. The payload is parsed as plain JSON, not with the codec, on every engine: its sender is outside minamo, so a payload such as `{"$bytes": "AQ=="}` arrives as that object, not as bytes. Validate it; the examples now approve only `answer?.approved === true`, where `{"approved": "false"}` used to approve. `MemoryEngine.complete` sends plain JSON.
 - `@minamojs/minamo`: new export `JournalError`, thrown when the journal or the tool calls cannot be trusted. It is never a tool result: thrown inside a workflow tool, for example by a nested `runTools`, it fails the execution instead of becoming the workflow's error result. A loop may catch it, for example to re-prompt the model after repeated call IDs.
 - **Breaking:** `@minamojs/minamo`: `runTools` throws `JournalError` for a turn that repeats a tool call ID, before any tool runs. Two such calls used to share one scope, one journal entry, and one idempotency key. A provider that sends empty or index-based call IDs needs its IDs normalized first.
