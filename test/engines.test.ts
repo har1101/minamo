@@ -5,47 +5,9 @@ import { LocalDurableTestRunner, WaitingOperationStatus } from "@aws/durable-exe
 import { model, RetryableError, type Tool } from "@minamojs/minamo";
 import { lambda } from "@minamojs/lambda-df";
 import { MemoryEngine } from "@minamojs/minamo/memory";
-import { agent, scripted } from "./agent.js";
+import { agent, scenario, scripted, sleep } from "./agent.js";
 
-// Real timers only where the platform clock matters: lookups finish out of call order, and the Lambda SDK's
-// 20 ms idle cooldown must pass before a callback arrives.
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const EXPECTED = 'Done: a="SLOW", b="FAST", c={"status":"sent","amount":100}';
-
-/** Turn 1 asks for a slow lookup, a fast lookup (finishes first), and a transfer that needs human approval. */
-function scenario() {
-  const token = Promise.withResolvers<string>();
-  const log = { runs: [] as string[], keys: {} as Record<string, string[]>, callIds: {} as Record<string, string>, executed: 0, published: 0, token: token.promise };
-  const { provider, counter } = scripted([
-    { id: "a", name: "lookup", input: { q: "slow", delayMs: 30 } },
-    { id: "b", name: "lookup", input: { q: "fast", delayMs: 1 } },
-    { id: "c", name: "transfer", input: { amount: 100 } },
-  ]);
-  const lookup: Tool<{ q: string; delayMs: number }> = {
-    run: async ({ q, delayMs }, ctx) => {
-      log.runs.push(q);
-      (log.keys[q] ??= []).push(ctx.idempotencyKey);
-      log.callIds[q] = ctx.call.id;
-      await sleep(delayMs);
-      return q.toUpperCase();
-    },
-  };
-  const transfer: Tool<{ amount: number }> = {
-    workflow: async ({ amount }, { durable, call }) => {
-      log.callIds.transfer = call.id;
-      const answer = await durable.signal<{ approved: boolean }>("approval", async t => {
-        log.published++;
-        token.resolve(t);
-      });
-      if (!answer.approved) return { status: "rejected" };
-      return durable.step("execute", async () => {
-        log.executed++;
-        return { status: "sent", amount };
-      });
-    },
-  };
-  return { log, counter, deps: { provider, tools: { lookup, transfer } } };
-}
 
 test("memory engine: suspends for approval and resumes without repeating work", async () => {
   const { log, counter, deps } = scenario();

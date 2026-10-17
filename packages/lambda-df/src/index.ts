@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { createRetryStrategy, type DurableContext, type Serdes } from "@aws/durable-execution-sdk-js";
 import { parse, stringify, type Duration, type Durable, type Retry, type StepInfo } from "@minamojs/minamo";
 
-/** Binary-safe JSON for every scope result the core writes. */
+/** Binary-safe JSON for every scope result the core writes. Signals skip it: their sender writes plain JSON. */
 function serdes<T>(): Serdes<T> {
   return {
     serialize: async value => value === undefined ? undefined : stringify(value),
@@ -74,13 +74,13 @@ function wrap(context: DurableContext, id: string): Durable {
       // A fixed-length parent id makes `id + name` unambiguous without a separator.
       return context.runInChildContext(name, child => fn(wrap(child, digest(id + name))), { serdes: serdes<T>() });
     },
-    async signal<T>(name: string, publish: (token: string) => Promise<void>, options?: { timeout?: Duration }) {
+    async signal(name: string, publish: (token: string) => Promise<void>, options?: { timeout?: Duration }) {
       claim(name);
       // `publish` runs as the SDK's submitter step, which would otherwise get the SDK's default retries.
       const raw = await context.waitForCallback(name, token => publish(token), {
         retryStrategy: noRetry, ...(options?.timeout && { timeout: seconds(options.timeout) }),
       });
-      return parse<T>(raw || "null");
+      return raw ? JSON.parse(raw) as unknown : null;
     },
   };
 }

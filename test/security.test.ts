@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { isDeepStrictEqual } from "node:util";
 import { withDurableExecution } from "@aws/durable-execution-sdk-js";
-import { LocalDurableTestRunner } from "@aws/durable-execution-sdk-js-testing";
+import { LocalDurableTestRunner, WaitingOperationStatus } from "@aws/durable-execution-sdk-js-testing";
 import { parse, RetryableError, runTools, stringify, type Durable, type Tool, type ToolCall } from "@minamojs/minamo";
 import { lambda } from "@minamojs/lambda-df";
 import { MemoryEngine } from "@minamojs/minamo/memory";
+import { agent, scenario, sleep } from "./agent.js";
 
 const markers = {
   bytes: new Uint8Array([1, 2, 3]),
@@ -197,3 +198,42 @@ test("memory engine: a replayed result that is not a tool result fails with Jour
   await assert.rejects(engine.run(durable => runTools(durable, "tools-1", [{ id: "a", name: "lookup", input: {} }], tools), null),
     /Journal mismatch/);
 });
+
+test("memory engine: the approval workflow approves only an explicit true", async () => {
+  const transfer = async (answer: unknown) => {
+    const { log, deps } = scenario();
+    const engine = new MemoryEngine();
+    const running = engine.run((durable, prompt: string) => agent(durable, prompt, deps), "go");
+    engine.complete(await log.token, answer);
+    const { text } = await running;
+    return { result: text.slice(text.indexOf("c=")), executed: log.executed };
+  };
+  for (const answer of [{ approved: "false" }, "false", null, {}, { approved: "true" }]) {
+    assert.deepEqual(await transfer(answer), { result: 'c={"status":"rejected"}', executed: 0 }, JSON.stringify(answer));
+  }
+  assert.deepEqual(await transfer({ approved: true }), { result: 'c={"status":"sent","amount":100}', executed: 1 });
+});
+
+test("Lambda engine: a callback payload shaped like a codec marker arrives as plain data", async t => {
+  await LocalDurableTestRunner.setupTestEnvironment({ skipTime: false });
+  t.after(() => LocalDurableTestRunner.teardownTestEnvironment());
+  const runner = new LocalDurableTestRunner({
+    handlerFunction: withDurableExecution(async (_event: unknown, context) => {
+      const answer = await lambda(context).signal("approval", async () => {}) as { approved?: unknown };
+      return { isBytes: answer.approved instanceof Uint8Array, answer };
+    }),
+  });
+  const running = runner.run({ payload: {} });
+  const callback = runner.getOperation("approval");
+  await callback.waitForData(WaitingOperationStatus.SUBMITTED);
+  await sleep(200);
+  await callback.sendCallbackSuccess(JSON.stringify({ approved: { $bytes: "AQ==" } }));
+  const execution = await running;
+
+  assert.equal(execution.getStatus(), "SUCCEEDED");
+  assert.deepEqual(execution.getResult(), { isBytes: false, answer: { approved: { $bytes: "AQ==" } } });
+});
+
+declare const durable: Durable;
+// @ts-expect-error A signal answer is whatever the token holder sent: `unknown`, with no type argument to trust.
+void (() => durable.signal<{ approved: boolean }>("approval", async () => {}));

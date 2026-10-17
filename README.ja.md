@@ -46,8 +46,9 @@ const tools: Record<string, Tool> = {
   refund: {
     // workflow ツールは durable なオペレーションを使えます。ここでは人の回答を（計算コストなしで）待ちます。
     workflow: async ({ orderId }: { orderId: string }, { durable, idempotencyKey }) => {
-      const { approved } = await durable.signal<{ approved: boolean }>("approval", token => notifyReviewer(orderId, token));
-      if (!approved) return { status: "rejected" };
+      // トークンを持つ人は、どんな JSON でも返せます。明示的な `true` だけを承認とみなします。
+      const answer = await durable.signal("approval", token => notifyReviewer(orderId, token)) as { approved?: unknown } | null;
+      if (answer?.approved !== true) return { status: "rejected" };
       return durable.step("refund", () => payments.refund(orderId, { idempotencyKey }));
     },
   },
@@ -84,7 +85,7 @@ Amazon Bedrock の Converse を使い、そのままデプロイできる完全�
 | --- | --- |
 | `step(name, fn, { retry }?)` | `fn` を実行し、結果を記録します。`retry` がなければ 1 回だけ実行します。`retry` があれば、`retry.when` が受け入れたエラーのときに再実行します。リプレイでは `fn` を実行せず、記録した結果を返します。`fn` の中で durable なオペレーションを使ってはいけません。 |
 | `scope(name, fn)` | durable なオペレーションを使える子の `Durable` を渡して、`fn` を実行します。完了したスコープは、記録した結果を返します。 |
-| `signal(name, publish, { timeout }?)` | `publish` が受け取ったトークンを誰かが完了させるまで、サスペンドします。`publish` は、`retry` のない step と同じく 1 回だけ実行します。Lambda では `waitForCallback` です。待っている間、関数は動きません。 |
+| `signal(name, publish, { timeout }?)` | `publish` が受け取ったトークンを誰かが完了させるまで、サスペンドします。送られた JSON を `unknown` として返します。コーデックを通さない普通の JSON で、検証もしません。中身を決めるのはトークンを持つ人だからです。`publish` は、`retry` のない step と同じく 1 回だけ実行します。Lambda では `waitForCallback` です。待っている間、関数は動きません。 |
 | `id` | このスコープを識別します。リプレイや再開をまたいで変わらず、どの実行のほかのスコープとも異なります。エンジンは、機密にあたる実行の識別子を `id` に入れてはいけません。`@minamojs/lambda-df` は、実行の ARN とスコープの名前から SHA-256 で作ります。 |
 
 名前は、スコープの中で一意かつ決定的にしてください。入力と記録済みの結果から作り、時刻や乱数は使いません。どのエンジンも、1 つのスコープの中で同じ名前が繰り返されると拒否します。
@@ -108,7 +109,7 @@ Amazon Bedrock の Converse を使い、そのままデプロイできる完全�
 
 ### 値
 
-記録する値は、JSON と `Uint8Array` です。エンジンは、step、scope、signal のすべてに同じコーデックを使います。`Uint8Array` は `{"$bytes": "<base64>"}` として保存します。利用者の値のうち、キーが 1 つだけで、そのキーが `$bytes`、`$$bytes` などのオブジェクトは、`$` を 1 つ足して保存し、元のまま復元します。そのため、ツールの出力がバイト列に見える形をしていても、バイト列としては戻りません。
+step と scope の結果は、JSON と `Uint8Array` です。エンジンは、どちらにも同じコーデックを使います。signal は、送信側の JSON をそのまま返します。送信側はコーデックを使わないからです。`Uint8Array` は `{"$bytes": "<base64>"}` として保存します。利用者の値のうち、キーが 1 つだけで、そのキーが `$bytes`、`$$bytes` などのオブジェクトは、`$` を 1 つ足して保存し、元のまま復元します。そのため、ツールの出力がバイト列に見える形をしていても、バイト列としては戻りません。
 
 ## エンジン
 
@@ -127,7 +128,7 @@ import { MemoryEngine } from "@minamojs/minamo/memory";
 
 const engine = new MemoryEngine({ crash: () => true }); // 記録のたびにクラッシュさせる
 const running = engine.run((durable, prompt: string) => agent(durable, prompt), "hello");
-engine.complete(token, { approved: true }); // signal に答える。token は publish が受け取った値
+engine.complete(token, { approved: true }); // signal に普通の JSON で答える。token は publish が受け取った値
 const result = await running;
 ```
 

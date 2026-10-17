@@ -46,8 +46,9 @@ const tools: Record<string, Tool> = {
   refund: {
     // Workflow tools may use durable operations: here, wait (without compute cost) until a human answers.
     workflow: async ({ orderId }: { orderId: string }, { durable, idempotencyKey }) => {
-      const { approved } = await durable.signal<{ approved: boolean }>("approval", token => notifyReviewer(orderId, token));
-      if (!approved) return { status: "rejected" };
+      // Whoever holds the token can answer with any JSON: approve only an explicit `true`.
+      const answer = await durable.signal("approval", token => notifyReviewer(orderId, token)) as { approved?: unknown } | null;
+      if (answer?.approved !== true) return { status: "rejected" };
       return durable.step("refund", () => payments.refund(orderId, { idempotencyKey }));
     },
   },
@@ -84,7 +85,7 @@ The engine interface. Adapters implement it; you pass it around.
 | --- | --- |
 | `step(name, fn, { retry }?)` | Runs `fn` and records its result. Without `retry` it runs once; with `retry` it runs again for errors that `retry.when` accepts. On replay, returns the recorded result without running `fn`. `fn` must not use durable operations. |
 | `scope(name, fn)` | Runs `fn` with a child `Durable` that may use durable operations. A completed scope returns its recorded result. |
-| `signal(name, publish, { timeout }?)` | Suspends until someone completes the token that `publish` receives. `publish` runs once, like a step without `retry`. On Lambda this is `waitForCallback`, and the function does not run while it waits. |
+| `signal(name, publish, { timeout }?)` | Suspends until someone completes the token that `publish` receives, and returns the JSON they sent as `unknown`: parsed as plain JSON, without the codec, and unvalidated, because whoever holds the token chooses it. `publish` runs once, like a step without `retry`. On Lambda this is `waitForCallback`, and the function does not run while it waits. |
 | `id` | Identifies this scope. The same on every replay and resume, and different for every other scope of every execution. An engine must not put a sensitive execution identifier in `id`: `@minamojs/lambda-df` derives it with SHA-256 from the execution ARN and the scope names. |
 
 Names must be unique within a scope and deterministic: build them from your input and from recorded results, never from time or randomness. Every engine rejects a repeated name in one scope.
@@ -108,7 +109,7 @@ Runs one turn's tool calls concurrently and returns their results in call order.
 
 ### Values
 
-Recorded values are JSON plus `Uint8Array`. Engines apply the same codec to every step, scope, and signal. A `Uint8Array` is stored as `{"$bytes": "<base64>"}`. Your own one-key object whose key is `$bytes`, `$$bytes`, and so on is stored with one more `$` and decodes unchanged, so tool output never comes back as bytes it only looked like.
+Step and scope results are JSON plus `Uint8Array`. Engines apply the same codec to both. A signal returns its sender's JSON as is, because the sender does not use the codec. A `Uint8Array` is stored as `{"$bytes": "<base64>"}`. Your own one-key object whose key is `$bytes`, `$$bytes`, and so on is stored with one more `$` and decodes unchanged, so tool output never comes back as bytes it only looked like.
 
 ## Engines
 
@@ -127,7 +128,7 @@ import { MemoryEngine } from "@minamojs/minamo/memory";
 
 const engine = new MemoryEngine({ crash: () => true }); // crash after every recorded operation
 const running = engine.run((durable, prompt: string) => agent(durable, prompt), "hello");
-engine.complete(token, { approved: true }); // answer a signal; the token is what `publish` received
+engine.complete(token, { approved: true }); // answer a signal with plain JSON; the token is what `publish` received
 const result = await running;
 ```
 

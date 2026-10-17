@@ -33,14 +33,15 @@ export interface Durable {
   /** Runs `fn` in a child scope that may use durable operations. A completed scope replays its recorded result. */
   scope<T>(name: string, fn: (child: Durable) => Promise<T>): Promise<T>;
   /**
-   * Suspends until someone completes `token` with a JSON value. `publish` hands the token out and, like a step
-   * without `retry`, runs once; keep it idempotent.
+   * Suspends until someone completes `token` and returns the JSON they sent, parsed without the codec and unvalidated:
+   * whoever holds the token chooses it. `publish` hands the token out and, like a step without `retry`, runs once;
+   * keep it idempotent.
    */
-  signal<T>(name: string, publish: (token: string) => Promise<void>, options?: { timeout?: Duration }): Promise<T>;
+  signal(name: string, publish: (token: string) => Promise<void>, options?: { timeout?: Duration }): Promise<unknown>;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Codec: every engine persists values through this, so durable values are JSON plus Uint8Array (Web base64).
+// Codec: engines persist step and scope values through this, so they are JSON plus Uint8Array (Web base64).
 // `{"$bytes": base64}` is a Uint8Array. A one-key object whose key is `$bytes`, `$$bytes`, ... is stored with one
 // more `$`, so each object decodes on its own and the bottom-up reviver still works.
 

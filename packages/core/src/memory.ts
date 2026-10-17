@@ -24,9 +24,9 @@ export class MemoryEngine {
 
   constructor(private readonly options: { crash?: (path: string) => boolean } = {}) {}
 
-  /** Completes a pending signal; the execution resumes in a new invocation. */
+  /** Completes a pending signal with plain JSON, as an outside sender would; the execution resumes in a new invocation. */
   complete(token: string, value: unknown): void {
-    this.journal.set(token, { ok: true, text: stringify(value) });
+    this.journal.set(token, { ok: true, text: JSON.stringify(value ?? null) });
     this.wake.resolve();
   }
 
@@ -72,8 +72,8 @@ export class MemoryEngine {
         throw CRASH;
       }
     };
-    const replay = (entry: Entry) => {
-      if (entry.ok) return parse(entry.text);
+    const replay = (entry: Entry, decode: (text: string) => unknown = parse) => {
+      if (entry.ok) return decode(entry.text);
       throw new Error(entry.error);
     };
 
@@ -123,7 +123,7 @@ export class MemoryEngine {
         const path = prefix + segment(name);
         claim(path);
         const done = engine.journal.get(path);
-        if (done) return replay(done) as never;
+        if (done) return replay(done, JSON.parse);
         // Publishing is journaled like a step, so a replay does not hand out the token twice.
         const published = `${path}#published`;
         if (!engine.journal.has(published)) {

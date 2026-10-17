@@ -35,3 +35,42 @@ export function scripted(calls: ToolCall[]) {
   };
   return { provider, counter };
 }
+
+// Real timers only where the platform clock matters: lookups finish out of call order, and the Lambda SDK's
+// 20 ms idle cooldown must pass before a callback arrives.
+export const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/** Turn 1 asks for a slow lookup, a fast lookup (finishes first), and a transfer that needs human approval. */
+export function scenario() {
+  const token = Promise.withResolvers<string>();
+  const log = { runs: [] as string[], keys: {} as Record<string, string[]>, callIds: {} as Record<string, string>, executed: 0, published: 0, token: token.promise };
+  const { provider, counter } = scripted([
+    { id: "a", name: "lookup", input: { q: "slow", delayMs: 30 } },
+    { id: "b", name: "lookup", input: { q: "fast", delayMs: 1 } },
+    { id: "c", name: "transfer", input: { amount: 100 } },
+  ]);
+  const lookup: Tool<{ q: string; delayMs: number }> = {
+    run: async ({ q, delayMs }, ctx) => {
+      log.runs.push(q);
+      (log.keys[q] ??= []).push(ctx.idempotencyKey);
+      log.callIds[q] = ctx.call.id;
+      await sleep(delayMs);
+      return q.toUpperCase();
+    },
+  };
+  const transfer: Tool<{ amount: number }> = {
+    workflow: async ({ amount }, { durable, call }) => {
+      log.callIds.transfer = call.id;
+      const answer = await durable.signal("approval", async t => {
+        log.published++;
+        token.resolve(t);
+      }) as { approved?: unknown } | null;
+      if (answer?.approved !== true) return { status: "rejected" };
+      return durable.step("execute", async () => {
+        log.executed++;
+        return { status: "sent", amount };
+      });
+    },
+  };
+  return { log, counter, deps: { provider, tools: { lookup, transfer } } };
+}

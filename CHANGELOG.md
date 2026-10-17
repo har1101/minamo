@@ -4,6 +4,7 @@ All packages (`@minamojs/minamo`, `@minamojs/lambda-df`) share one version.
 
 ## Unreleased
 
+- **Breaking:** `@minamojs/minamo`, `@minamojs/lambda-df`: `Durable.signal` returns `Promise<unknown>` and takes no type parameter. The payload is parsed as plain JSON, not with the codec, on every engine: its sender is outside minamo, so a payload such as `{"$bytes": "AQ=="}` arrives as that object, not as bytes. Validate it; the examples now approve only `answer?.approved === true`, where `{"approved": "false"}` used to approve. `MemoryEngine.complete` sends plain JSON.
 - **Breaking:** `@minamojs/minamo`: `runTools` rejects a turn that repeats a tool call ID, before any tool runs. Two such calls used to share one scope, one journal entry, and one idempotency key.
 - `@minamojs/minamo`: `runTools` fails with `Journal mismatch` when a replayed result does not carry its call's ID and tool name, for example after the code changed under a running execution. It used to return the other call's result.
 - **Breaking:** `@minamojs/minamo`: `Durable.executionId` is replaced by `Durable.id`, which identifies one scope instead of the execution. It is the same on every replay and resume and differs for every other scope of every execution. An engine must not put a sensitive execution identifier in it.
