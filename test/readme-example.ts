@@ -21,8 +21,9 @@ const tools: Record<string, Tool> = {
   refund: {
     // Workflow tools may use durable operations: here, wait (for free) until a human answers.
     workflow: async ({ orderId }: { orderId: string }, { durable, idempotencyKey }) => {
-      const { approved } = await durable.signal<{ approved: boolean }>("approval", token => notifyReviewer(orderId, token));
-      if (!approved) return { status: "rejected" };
+      const answer = await durable.signal<{ approved?: unknown } | null>("approval", token => notifyReviewer(orderId, token));
+      // Anyone who may complete the token can send any JSON: approve only an explicit `true`, not "false" or "yes".
+      if (answer?.approved !== true) return { status: "rejected" };
       return durable.step("refund", () => payments.refund(orderId, { idempotencyKey }));
     },
   },

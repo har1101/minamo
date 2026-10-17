@@ -11,6 +11,7 @@ All packages (`@minamojs/minamo`, `@minamojs/lambda-df`) share one version.
 - `@minamojs/minamo`: `runTools` opens its scopes after hashing the keys, so it no longer opens them synchronously when called. They still open in call order before any tool starts.
 - `@minamojs/minamo`: `runTools` rejects a turn whose calls repeat a call ID, before any tool starts. Before, the memory engine failed with a duplicate operation name after the first tool had started, and on Lambda both calls ran with the same idempotency key.
 - `@minamojs/minamo`: on replay, `runTools` rejects a recorded tool result whose call ID or tool name differs from the call it is replayed for, instead of handing it to the model.
+- README, `examples/lambda-bedrock`: approve only `approved === true`. Before, the approval check was truthiness, so an answer of `{"approved": "false"}` approved the refund. Added a Security section on approval tokens, what the journal keeps, and tool input.
 
 ## 0.1.0-alpha.1 (2026-09-25)
 

@@ -33,11 +33,11 @@ function scenario() {
   const transfer: Tool<{ amount: number }> = {
     workflow: async ({ amount }, { durable, call }) => {
       log.callIds.transfer = call.id;
-      const answer = await durable.signal<{ approved: boolean }>("approval", async t => {
+      const answer = await durable.signal<{ approved?: unknown } | null>("approval", async t => {
         log.published++;
         token.resolve(t);
       });
-      if (!answer.approved) return { status: "rejected" };
+      if (answer?.approved !== true) return { status: "rejected" };
       return durable.step("execute", async () => {
         log.executed++;
         return { status: "sent", amount };

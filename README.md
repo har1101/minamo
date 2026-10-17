@@ -46,8 +46,9 @@ const tools: Record<string, Tool> = {
   refund: {
     // Workflow tools may use durable operations: here, wait (without compute cost) until a human answers.
     workflow: async ({ orderId }: { orderId: string }, { durable, idempotencyKey }) => {
-      const { approved } = await durable.signal<{ approved: boolean }>("approval", token => notifyReviewer(orderId, token));
-      if (!approved) return { status: "rejected" };
+      const answer = await durable.signal<{ approved?: unknown } | null>("approval", token => notifyReviewer(orderId, token));
+      // Anyone who may complete the token can send any JSON: approve only an explicit `true`, not "false" or "yes".
+      if (answer?.approved !== true) return { status: "rejected" };
       return durable.step("refund", () => payments.refund(orderId, { idempotencyKey }));
     },
   },
@@ -136,6 +137,12 @@ const result = await running;
 - **At-least-once.** A tool can run again if the process stops after its side effect and before its result is recorded. Use `idempotencyKey` with external APIs.
 - **Determinism.** Code outside steps runs again on every replay. It must make the same durable calls in the same order.
 - **Lambda quotas.** An execution can have up to 30,000 operations and up to 100 MB of checkpoint data in total. Each step result, such as the events of one model call, can be up to 1 MB; `@minamojs/lambda-df` fails a larger step with an error that names it, without retrying it. A signal value is also capped at 1 MB: Lambda rejects a larger callback result when it is sent. A scope result has no cap of its own: the SDK does not record a result over 256 KB and rebuilds it on replay from the scope's recorded operations. Split long conversations across executions. Invoke a published version or alias, so that replays run the same code.
+
+## Security
+
+- **Approvals.** Whoever may complete a signal's token can answer it with any JSON. On Lambda, that is anyone allowed to call `lambda:SendDurableExecutionCallbackSuccess` on the function who knows the token. Send the token only to an approval backend that authenticates the approver and checks that this person may approve this action. Never send it to the user who asked for the action, and do not log it. Check the answer strictly, as in the example, and set `timeout`.
+- **What the journal keeps.** Model events, tool inputs and results, tool error messages, and signal values are stored as plain JSON for the execution's retention period. Grant `lambda:GetDurableExecution*` only to principals that may see them. Keep secrets out of tool results and error messages, which the model also sees.
+- **Tool input.** Tool input is model output, so text injected into the prompt can choose it. Validate it in each tool.
 
 ## Design
 
