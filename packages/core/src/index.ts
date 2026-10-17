@@ -38,28 +38,36 @@ export interface Durable {
 
 // ---------------------------------------------------------------------------------------------------------------
 // Codec: every engine persists values through this, so durable values are JSON plus Uint8Array (Web base64).
+// `{"$bytes": base64}` is a Uint8Array. A one-key object whose key is `$bytes`, `$$bytes`, ... is stored with one
+// more `$`, so each object decodes on its own and the bottom-up reviver still works.
 
 const BYTES = "$bytes";
+
+function marker(value: unknown): string | undefined {
+  const keys = Object.keys(value ?? 0);
+  return keys.length === 1 && /^\$+bytes$/.test(keys[0]) ? keys[0] : undefined;
+}
 
 export function stringify(value: unknown): string {
   return JSON.stringify(value ?? null, function (this: Record<string, unknown>, key, current) {
     const original = this[key];
-    if (!(original instanceof Uint8Array)) return current;
-    let binary = "";
-    for (const byte of original) binary += String.fromCharCode(byte);
-    return { [BYTES]: btoa(binary) };
+    if (original instanceof Uint8Array) {
+      let binary = "";
+      for (const byte of original) binary += String.fromCharCode(byte);
+      return { [BYTES]: btoa(binary) };
+    }
+    const escape = marker(current);
+    return escape ? { ["$" + escape]: current[escape] } : current;
   });
 }
 
 export function parse<T>(text: string): T {
   return JSON.parse(text, (_key, current) => {
-    if (current && typeof current === "object" && !Array.isArray(current)) {
-      const keys = Object.keys(current);
-      if (keys.length === 1 && keys[0] === BYTES && typeof current[BYTES] === "string") {
-        return Uint8Array.from(atob(current[BYTES]), c => c.charCodeAt(0));
-      }
-    }
-    return current;
+    const key = marker(current);
+    if (!key) return current;
+    if (key !== BYTES) return { [key.slice(1)]: current[key] };
+    // 0.1.0-alpha.1 wrote `{"$bytes": <non-string>}` unescaped, as data.
+    return typeof current[key] === "string" ? Uint8Array.from(atob(current[key]), c => c.charCodeAt(0)) : current;
   }) as T;
 }
 
