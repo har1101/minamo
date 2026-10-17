@@ -101,6 +101,8 @@ Runs one turn's tool calls concurrently and returns their results in call order.
 - A tool with `workflow` gets its own `Durable` and may use steps, scopes, and signals, for example approvals or sub-agents.
 - Throw `RetryableError` to retry a plain tool's step (default: 3 attempts with exponential backoff). Any other error is recorded once as an error result that the model sees. Set `retry` on a tool to change this.
 - Unknown tools, exhausted retries, and failed workflows also become error results, so the model can react.
+- A turn that repeats a call ID rejects before any tool runs, because two calls would share one scope and one idempotency key.
+- A replayed result must carry its call's ID and tool name. Otherwise `runTools` rejects with `Journal mismatch`, which fails the execution: the code changed under a running execution.
 - Every tool receives `idempotencyKey`, the `id` of its call's scope. It stays the same on every retry, replay, and resume of the call, and differs for every other call, including a call ID that the model reuses in a later turn and a call inside a nested `runTools`. Treat it as opaque and pass it to external APIs.
 - Every tool also receives `call`, the `ToolCall` it runs, for example to key progress events by `call.id`.
 

@@ -155,3 +155,45 @@ test("Lambda engine: a repeated operation name in one scope fails the execution,
   assert.match(execution.getError()?.errorMessage ?? "", /Duplicate durable operation name: x/);
   assert.equal(second, 0);
 });
+
+const repeated: ToolCall[] = [
+  { id: "call_0", name: "refund", input: { amount: 10 } },
+  { id: "call_0", name: "refund", input: { amount: 20 } },
+];
+
+test("memory engine: a turn that repeats a call ID fails before any tool runs", async () => {
+  const { seen, tools } = refunds();
+  const failure = await new MemoryEngine().run(durable => runTools(durable, "tools-1", repeated, tools), null).catch(error => error);
+  assert.equal(seen.length, 0);
+  assert.match(String(failure), /Repeated tool call ID/);
+});
+
+test("Lambda engine: a turn that repeats a call ID fails before any tool runs", async t => {
+  await LocalDurableTestRunner.setupTestEnvironment({ skipTime: false });
+  t.after(() => LocalDurableTestRunner.teardownTestEnvironment());
+  const { seen, tools } = refunds();
+  const execution = await new LocalDurableTestRunner({
+    handlerFunction: withDurableExecution(async (_event: unknown, context) => runTools(lambda(context), "tools-1", repeated, tools)),
+  }).run({ payload: {} });
+
+  assert.equal(seen.length, 0);
+  assert.equal(execution.getStatus(), "FAILED");
+  assert.match(execution.getError()?.errorMessage ?? "", /Repeated tool call ID/);
+});
+
+test("memory engine: a replayed result recorded for another tool fails with Journal mismatch", async () => {
+  // A redeploy under a running execution: after the crash, the code maps call `a` to another tool.
+  const engine = new MemoryEngine({ crash: path => path === "tools-1:a" });
+  const tools: Record<string, Tool> = { lookup: { run: async () => "lookup" }, search: { run: async () => "search" } };
+  const handler = (durable: Durable) =>
+    runTools(durable, "tools-1", [{ id: "a", name: engine.invocations === 1 ? "lookup" : "search", input: {} }], tools);
+  await assert.rejects(engine.run(handler, null), /Journal mismatch/);
+});
+
+test("memory engine: a replayed result that is not a tool result fails with Journal mismatch", async () => {
+  const engine = new MemoryEngine();
+  engine.journal.set("tools-1:a", { ok: true, text: '"lookup"' });
+  const tools: Record<string, Tool> = { lookup: { run: async () => "lookup" } };
+  await assert.rejects(engine.run(durable => runTools(durable, "tools-1", [{ id: "a", name: "lookup", input: {} }], tools), null),
+    /Journal mismatch/);
+});

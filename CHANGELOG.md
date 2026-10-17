@@ -4,6 +4,8 @@ All packages (`@minamojs/minamo`, `@minamojs/lambda-df`) share one version.
 
 ## Unreleased
 
+- **Breaking:** `@minamojs/minamo`: `runTools` rejects a turn that repeats a tool call ID, before any tool runs. Two such calls used to share one scope, one journal entry, and one idempotency key.
+- `@minamojs/minamo`: `runTools` fails with `Journal mismatch` when a replayed result does not carry its call's ID and tool name, for example after the code changed under a running execution. It used to return the other call's result.
 - **Breaking:** `@minamojs/minamo`: `Durable.executionId` is replaced by `Durable.id`, which identifies one scope instead of the execution. It is the same on every replay and resume and differs for every other scope of every execution. An engine must not put a sensitive execution identifier in it.
 - **Breaking:** `@minamojs/minamo`: `ToolContext.idempotencyKey` is now the `id` of the call's scope, an opaque string, instead of `<executionId>#<call id>`. A call ID reused in a later turn or in a nested `runTools` no longer shares a key with an earlier call, and on Lambda the key no longer contains the execution ARN (it is a SHA-256 hex digest). Upgrading changes every idempotency key, so a tool retried after the deploy can run twice against a deduplicating API: let running executions finish on the old version by invoking a published version or alias.
 - **Breaking:** `@minamojs/lambda-df`: a repeated operation name in one scope fails with `Duplicate durable operation name`, as on the memory engine. The SDK alone accepted it.

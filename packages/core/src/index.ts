@@ -153,9 +153,22 @@ const defaultToolRetry: Retry = {
  * Runs one model turn's tool calls concurrently. Each call gets its own scope, opened synchronously in call order,
  * so completion order never changes operation identity.
  */
-export function runTools(durable: Durable, turn: string, calls: readonly ToolCall[], tools: Record<string, Tool>): Promise<ToolResult[]> {
-  // Inputs are model output and are not validated here; each tool validates its own input.
-  return Promise.all(calls.map(call => durable.scope(`${turn}:${call.id}`, child => runTool(child, call, tools[call.name]))));
+export async function runTools(durable: Durable, turn: string, calls: readonly ToolCall[], tools: Record<string, Tool>): Promise<ToolResult[]> {
+  // Inputs are model output and are not validated here; each tool validates its own input. A repeated ID would give
+  // two calls one scope, one journal entry, and one idempotency key, so the turn fails before any scope opens.
+  const ids = new Set<string>();
+  for (const { id } of calls) {
+    if (ids.has(id)) throw new Error(`Repeated tool call ID in ${turn}: ${id}`);
+    ids.add(id);
+  }
+  return Promise.all(calls.map(async call => {
+    const result = await durable.scope(`${turn}:${call.id}`, child => runTool(child, call, tools[call.name])) as Partial<ToolResult> | null;
+    // Only a replay can differ: the code or the journal changed under a running execution.
+    if (result?.id !== call.id || result?.name !== call.name) {
+      throw new Error(`Journal mismatch: ${turn}:${call.id} (${call.name}) replayed ${result?.id} (${result?.name})`);
+    }
+    return result as ToolResult;
+  }));
 }
 
 async function runTool(durable: Durable, call: ToolCall, tool: Tool | undefined): Promise<ToolResult> {
