@@ -38,29 +38,50 @@ export interface Durable {
 
 // ---------------------------------------------------------------------------------------------------------------
 // Codec: every engine persists values through this, so durable values are JSON plus Uint8Array (Web base64).
+// Data shaped like a marker is stored as `{ "$esc": data }`, so a tool or model can never produce a Uint8Array.
 
 const BYTES = "$bytes";
+const ESCAPE = "$esc";
+
+function isMarker(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const keys = Object.keys(value);
+  return keys.length === 1 && (keys[0] === BYTES || keys[0] === ESCAPE);
+}
 
 export function stringify(value: unknown): string {
+  const wrappers = new WeakSet<object>();
   return JSON.stringify(value ?? null, function (this: Record<string, unknown>, key, current) {
     const original = this[key];
-    if (!(original instanceof Uint8Array)) return current;
-    let binary = "";
-    for (const byte of original) binary += String.fromCharCode(byte);
-    return { [BYTES]: btoa(binary) };
+    if (original instanceof Uint8Array) {
+      let binary = "";
+      for (const byte of original) binary += String.fromCharCode(byte);
+      return { [BYTES]: btoa(binary) };
+    }
+    // A wrapper's own entry is the escaped data itself; escaping it again would never end.
+    if (wrappers.has(this) || !isMarker(current)) return current;
+    const wrapper = { [ESCAPE]: current };
+    wrappers.add(wrapper);
+    return wrapper;
   });
 }
 
 export function parse<T>(text: string): T {
-  return JSON.parse(text, (_key, current) => {
-    if (current && typeof current === "object" && !Array.isArray(current)) {
-      const keys = Object.keys(current);
-      if (keys.length === 1 && keys[0] === BYTES && typeof current[BYTES] === "string") {
-        return Uint8Array.from(atob(current[BYTES]), c => c.charCodeAt(0));
-      }
-    }
-    return current;
-  }) as T;
+  return revive(JSON.parse(text)) as T;
+}
+
+/** Top-down, so an escaped object is unwrapped before its entries are read as markers. */
+function revive(value: unknown, escaped = false): unknown {
+  if (!value || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(item => revive(item));
+  const record = value as Record<string, unknown>;
+  if (!escaped && isMarker(record)) {
+    if (ESCAPE in record) return revive(record[ESCAPE], true);
+    if (typeof record[BYTES] === "string") return Uint8Array.from(atob(record[BYTES]), c => c.charCodeAt(0));
+  }
+  // In place: JSON.parse makes `__proto__` an own data property, and assigning to it keeps it one.
+  for (const key of Object.keys(record)) record[key] = revive(record[key]);
+  return record;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
