@@ -14,7 +14,7 @@ export const handler = withDurableExecution(async (event: { prompt: string }, co
   agent(lambda(context), event.prompt)); // `agent` is your loop, written with @minamojs/minamo
 ```
 
-`lambda(context)` maps minamo's `step`, `scope`, and `signal` to the SDK's `step`, `runInChildContext`, and `waitForCallback`. It stores every value with minamo's codec. Without a `retry` option, a step runs once instead of using the SDK's default retries.
+`lambda(context)` maps minamo's `step`, `scope`, and `signal` to the SDK's `step`, `runInChildContext`, and `waitForCallback`. It stores every value with minamo's codec. Without a `retry` option, a step runs once instead of using the SDK's default retries. A step whose result is over Lambda's 1 MB payload limit per durable operation fails with an error that names the step, and is never retried.
 
 Peer dependencies: `@minamojs/minamo` and `@aws/durable-execution-sdk-js` 2.x.
 

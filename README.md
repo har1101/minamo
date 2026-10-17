@@ -133,7 +133,7 @@ const result = await running;
 
 - **At-least-once.** A tool can run again if the process stops after its side effect and before its result is recorded. Use `idempotencyKey` with external APIs.
 - **Determinism.** Code outside steps runs again on every replay. It must make the same durable calls in the same order.
-- **Lambda quotas.** An execution can have up to 3,000 operations and up to 100 MB of checkpoint data in total. Each step result, such as the events of one model call, can be up to 256 KB; `@minamojs/lambda-df` fails a larger step with an error that names it. Split long conversations across executions. Invoke a published version or alias, so that replays run the same code.
+- **Lambda quotas.** An execution can have up to 30,000 durable operations and can write up to 100 MB of checkpoint data in total. Each durable operation's payload can be up to 1 MB, a limit that cannot be raised. This covers each step result, such as the events of one model call, and the result that completes a signal. `@minamojs/lambda-df` fails a larger step with an error that names it; Lambda rejects a larger callback result when it is sent. A scope result over 256 KB is not stored: the SDK runs the scope again on replay and rebuilds the result from the scope's recorded operations. Split long conversations across executions. Invoke a published version or alias, so that replays run the same code.
 
 ## Design
 

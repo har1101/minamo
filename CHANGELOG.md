@@ -2,6 +2,10 @@
 
 All packages (`@minamojs/minamo`, `@minamojs/lambda-df`) share one version.
 
+## Unreleased
+
+- `@minamojs/lambda-df`: the step size check follows Lambda's new quota of 1 MB per durable operation (was 256 KB). Steps between 256 KB and 1 MB, which used to fail with `StepTooLargeError`, are now recorded. Docs state the new quotas: 30,000 operations per execution (was 3,000), 1 MB per operation, and 100 MB written per execution.
+
 ## 0.1.0-alpha.1 (2026-09-25)
 
 - `@minamojs/lambda-df`: `signal` no longer retries a failing `publish` with the SDK's default retry strategy (6 attempts); it runs once, as on every engine (#1).

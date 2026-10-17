@@ -12,8 +12,11 @@ function serdes<T>(): Serdes<T> {
 /** Step results are serialized inside the step (see {@link encodeStep}), so the checkpoint stores the text as is. */
 const passthrough: Serdes<string | undefined> = { serialize: async value => value, deserialize: async data => data };
 
-/** Lambda caps a STEP checkpoint payload at 256 KB (OperationUpdate `Payload`). */
-const STEP_PAYLOAD_LIMIT = 256 * 1024;
+/**
+ * Lambda caps the payload of one durable operation at 1 MB (the "Maximum payload per durable operation" quota, which
+ * cannot be increased). The SDK does not check a step's size, so an oversized result would fail the checkpoint call.
+ */
+const STEP_PAYLOAD_LIMIT = 1024 * 1024;
 
 /** Deterministic, so never retried: another attempt would redo the work (e.g. a model call) and fail the same way. */
 class StepTooLargeError extends Error {

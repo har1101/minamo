@@ -172,21 +172,37 @@ test("Lambda engine: a failing signal publish fails the execution instead of ret
   assert.equal(published, 1);
 });
 
-test("Lambda engine: a model call larger than the 256 KB step limit fails with a clear error", async t => {
+test("Lambda engine: a step result up to the 1 MB operation payload limit is recorded", async t => {
   await LocalDurableTestRunner.setupTestEnvironment({ skipTime: true });
   t.after(() => LocalDurableTestRunner.teardownTestEnvironment());
   let calls = 0;
   const call = async function* () {
     calls++;
-    yield "x".repeat(200 * 1024);
-    yield "é".repeat(30 * 1024); // 2 bytes each in UTF-8: over the limit in bytes, not in characters
+    yield "x".repeat(900 * 1024); // over the old 256 KB limit, under 1 MB
+  };
+  const handler = withDurableExecution(async (_event: unknown, context) => (await model(lambda(context), "model-1", call)).join("").length);
+  const execution = await new LocalDurableTestRunner({ handlerFunction: handler }).run({ payload: {} });
+
+  assert.equal(execution.getStatus(), "SUCCEEDED");
+  assert.equal(execution.getResult(), 900 * 1024);
+  assert.equal(calls, 1);
+});
+
+test("Lambda engine: a model call larger than the 1 MB operation payload limit fails with a clear error", async t => {
+  await LocalDurableTestRunner.setupTestEnvironment({ skipTime: true });
+  t.after(() => LocalDurableTestRunner.teardownTestEnvironment());
+  let calls = 0;
+  const call = async function* () {
+    calls++;
+    yield "x".repeat(900 * 1024);
+    yield "é".repeat(100 * 1024); // 2 bytes each in UTF-8: over the limit in bytes, not in characters
   };
   // Even a policy that retries every error must not redo a model call whose result can never be recorded.
   const handler = withDurableExecution(async (_event: unknown, context) => model(lambda(context), "model-1", call, { retry: { maxAttempts: 3 } }));
   const execution = await new LocalDurableTestRunner({ handlerFunction: handler }).run({ payload: {} });
 
   assert.equal(execution.getStatus(), "FAILED");
-  assert.match(execution.getError()?.errorMessage ?? "", /Step "model-1" result is \d+ bytes/);
+  assert.match(execution.getError()?.errorMessage ?? "", /Step "model-1" result is \d+ bytes; .* at most 1048576 bytes/);
   assert.equal(calls, 1, "a size error is never retried");
 });
 
