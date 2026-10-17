@@ -119,6 +119,15 @@ export class RetryableError extends Error {
   override name = "RetryableError";
 }
 
+/**
+ * The journal or the tool calls cannot be trusted: a repeated call ID, a replayed result that belongs to another call,
+ * or a repeated operation name. Never a tool result, even inside a workflow tool, so it fails the execution unless the
+ * caller's loop catches it, for example to re-prompt the model after repeated call IDs.
+ */
+export class JournalError extends Error {
+  override name = "JournalError";
+}
+
 export type ToolCall = { id: string; name: string; input: unknown };
 
 export type ToolContext = {
@@ -147,6 +156,8 @@ export type Tool<I = never> =
 
 export type ToolResult = { id: string; name: string } & ({ status: "ok"; output: unknown } | { status: "error"; error: string });
 
+const isJournalError = (error: unknown) => error instanceof JournalError || (error instanceof Error && error.name === "JournalError");
+
 const defaultToolRetry: Retry = {
   maxAttempts: 3, initialDelay: { seconds: 1 }, maxDelay: { seconds: 30 },
   when: error => error instanceof RetryableError || error.name === "RetryableError",
@@ -161,14 +172,14 @@ export async function runTools(durable: Durable, turn: string, calls: readonly T
   // two calls one scope, one journal entry, and one idempotency key, so the turn fails before any scope opens.
   const ids = new Set<string>();
   for (const { id } of calls) {
-    if (ids.has(id)) throw new Error(`Repeated tool call ID in ${turn}: ${id}`);
+    if (ids.has(id)) throw new JournalError(`Repeated tool call ID in ${turn}: ${id}`);
     ids.add(id);
   }
   return Promise.all(calls.map(async call => {
     const result = await durable.scope(`${turn}:${call.id}`, child => runTool(child, call, tools[call.name])) as Partial<ToolResult> | null;
     // Only a replay can differ: the code or the journal changed under a running execution.
     if (result?.id !== call.id || result?.name !== call.name) {
-      throw new Error(`Journal mismatch: ${turn}:${call.id} (${call.name}) replayed ${result?.id} (${result?.name})`);
+      throw new JournalError(`Journal mismatch: ${turn}:${call.id} (${call.name}) replayed ${result?.id} (${result?.name})`);
     }
     return result as ToolResult;
   }));
@@ -187,11 +198,12 @@ async function runTool(durable: Durable, call: ToolCall, tool: Tool | undefined)
       try {
         return { ...base, status: "ok", output: await tool.run(input, { ...ctx, ...info }) };
       } catch (error) {
-        if (error instanceof Error && retry.when?.(error) !== false) throw error;
+        if (isJournalError(error) || (error instanceof Error && retry.when?.(error) !== false)) throw error;
         return { ...base, status: "error", error: String(error instanceof Error ? error.message : error) };
       }
     }, { retry });
   } catch (error) {
+    if (isJournalError(error)) throw error;
     // Retries exhausted (or a workflow failed): the model sees the failure instead of the execution dying.
     return { ...base, status: "error", error: String(error instanceof Error ? error.message : error) };
   }

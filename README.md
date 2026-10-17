@@ -88,7 +88,7 @@ The engine interface. Adapters implement it; you pass it around.
 | `signal(name, publish, { timeout }?)` | Suspends until someone completes the token that `publish` receives, and returns the JSON they sent as `unknown`: parsed as plain JSON, without the codec, and unvalidated, because whoever holds the token chooses it. `publish` runs once, like a step without `retry`. On Lambda this is `waitForCallback`, and the function does not run while it waits. |
 | `id` | Identifies this scope. The same on every replay and resume, and different for every other scope of every execution. An engine must not put a sensitive execution identifier in `id`: `@minamojs/lambda-df` derives it with SHA-256 from the execution ARN and the scope names. |
 
-Names must be unique within a scope and deterministic: build them from your input and from recorded results, never from time or randomness. Every engine rejects a repeated name in one scope.
+Names must be unique within a scope and deterministic: build them from your input and from recorded results, never from time or randomness. Every engine rejects a repeated name in one scope with `JournalError`.
 
 ### `model(durable, name, call, options?)`
 
@@ -102,8 +102,9 @@ Runs one turn's tool calls concurrently and returns their results in call order.
 - A tool with `workflow` gets its own `Durable` and may use steps, scopes, and signals, for example approvals or sub-agents.
 - Throw `RetryableError` to retry a plain tool's step (default: 3 attempts with exponential backoff). Any other error is recorded once as an error result that the model sees. Set `retry` on a tool to change this.
 - Unknown tools, exhausted retries, and failed workflows also become error results, so the model can react.
-- A turn that repeats a call ID rejects before any tool runs, because two calls would share one scope and one idempotency key.
-- A replayed result must carry its call's ID and tool name. Otherwise `runTools` rejects with `Journal mismatch`, which fails the execution: the code changed under a running execution.
+- A turn that repeats a call ID throws `JournalError` before any tool runs, because two calls would share one scope and one idempotency key.
+- A replayed result must carry its call's ID and tool name. Otherwise `runTools` throws `JournalError` (`Journal mismatch`): the code changed under a running execution.
+- `JournalError` is never a tool result. It fails the execution, even when a nested `runTools` inside a workflow tool throws it. Your loop may catch it, for example to re-prompt the model after repeated call IDs. A provider that sends empty or index-based call IDs needs its IDs normalized first.
 - Every tool receives `idempotencyKey`, the `id` of its call's scope. It stays the same on every retry, replay, and resume of the call, and differs for every other call, including a call ID that the model reuses in a later turn and a call inside a nested `runTools`. Treat it as opaque and pass it to external APIs.
 - Every tool also receives `call`, the `ToolCall` it runs, for example to key progress events by `call.id`.
 

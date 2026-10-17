@@ -1,4 +1,4 @@
-import { parse, stringify, type Durable, type StepInfo } from "./index.js";
+import { JournalError, parse, stringify, type Durable, type StepInfo } from "./index.js";
 
 type Entry = { ok: true; text: string } | { ok: false; error: string };
 
@@ -59,7 +59,7 @@ export class MemoryEngine {
     });
     const claim = (path: string) => {
       if (dead) throw CRASH;
-      if (seen.has(path)) throw new Error(`Duplicate durable operation name: ${path}`);
+      if (seen.has(path)) throw new JournalError(`Duplicate durable operation name: ${path}`);
       seen.add(path);
     };
     const record = (path: string, entry: Entry) => {

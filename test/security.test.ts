@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { isDeepStrictEqual } from "node:util";
 import { withDurableExecution } from "@aws/durable-execution-sdk-js";
 import { LocalDurableTestRunner, WaitingOperationStatus } from "@aws/durable-execution-sdk-js-testing";
-import { parse, RetryableError, runTools, stringify, type Durable, type Tool, type ToolCall } from "@minamojs/minamo";
+import { JournalError, parse, RetryableError, runTools, stringify, type Durable, type Tool, type ToolCall } from "@minamojs/minamo";
 import { lambda } from "@minamojs/lambda-df";
 import { MemoryEngine } from "@minamojs/minamo/memory";
 import { agent, scenario, sleep } from "./agent.js";
@@ -163,6 +163,7 @@ test("Lambda engine: a repeated operation name in one scope fails the execution,
   }).run({ payload: {} });
 
   assert.equal(execution.getStatus(), "FAILED");
+  assert.equal(execution.getError()?.errorType, "JournalError");
   assert.match(execution.getError()?.errorMessage ?? "", /Duplicate durable operation name: x/);
   assert.equal(second, 0);
 });
@@ -174,9 +175,32 @@ const repeated: ToolCall[] = [
 
 test("memory engine: a turn that repeats a call ID fails before any tool runs", async () => {
   const { seen, tools } = refunds();
-  const failure = await new MemoryEngine().run(durable => runTools(durable, "tools-1", repeated, tools), null).catch(error => error);
+  await assert.rejects(new MemoryEngine().run(durable => runTools(durable, "tools-1", repeated, tools), null), JournalError);
   assert.equal(seen.length, 0);
-  assert.match(String(failure), /Repeated tool call ID/);
+});
+
+test("memory engine: a nested turn that repeats a call ID fails the execution, not the workflow tool", async () => {
+  const { seen, tools } = refunds();
+  tools.delegate = { workflow: async (_input, { durable }) => runTools(durable, "tools-1", repeated, tools) };
+  const engine = new MemoryEngine();
+  await assert.rejects(engine.run(durable => runTools(durable, "tools-1", [{ id: "d", name: "delegate", input: {} }], tools), null),
+    JournalError);
+  assert.equal(seen.length, 0);
+});
+
+test("memory engine: a repeated operation name inside a workflow tool fails the execution", async () => {
+  let runs = 0;
+  const tools: Record<string, Tool> = {
+    twice: {
+      workflow: async (_input, { durable }) => {
+        await durable.step("x", async () => ++runs);
+        return durable.step("x", async () => ++runs);
+      },
+    },
+  };
+  await assert.rejects(new MemoryEngine().run(durable => runTools(durable, "tools-1", [{ id: "a", name: "twice", input: {} }], tools), null),
+    JournalError);
+  assert.equal(runs, 1);
 });
 
 test("Lambda engine: a turn that repeats a call ID fails before any tool runs", async t => {
@@ -189,6 +213,7 @@ test("Lambda engine: a turn that repeats a call ID fails before any tool runs", 
 
   assert.equal(seen.length, 0);
   assert.equal(execution.getStatus(), "FAILED");
+  assert.equal(execution.getError()?.errorType, "JournalError");
   assert.match(execution.getError()?.errorMessage ?? "", /Repeated tool call ID/);
 });
 
@@ -198,7 +223,23 @@ test("memory engine: a replayed result recorded for another tool fails with Jour
   const tools: Record<string, Tool> = { lookup: { run: async () => "lookup" }, search: { run: async () => "search" } };
   const handler = (durable: Durable) =>
     runTools(durable, "tools-1", [{ id: "a", name: engine.invocations === 1 ? "lookup" : "search", input: {} }], tools);
-  await assert.rejects(engine.run(handler, null), /Journal mismatch/);
+  await assert.rejects(engine.run(handler, null), JournalError);
+});
+
+test("memory engine: a Journal mismatch inside a workflow tool fails the execution instead of becoming its result", async () => {
+  // The nested runTools of a sub-agent maps call `n` to another tool after the crash.
+  const engine = new MemoryEngine({ crash: path => path === "outer:a/inner:n" });
+  const tools: Record<string, Tool> = {
+    lookup: { run: async () => "lookup" },
+    search: { run: async () => "search" },
+    delegate: {
+      workflow: async (_input, { durable }) =>
+        runTools(durable, "inner", [{ id: "n", name: engine.invocations === 1 ? "lookup" : "search", input: {} }], tools),
+    },
+  };
+  await assert.rejects(engine.run(durable => runTools(durable, "outer", [{ id: "a", name: "delegate", input: {} }], tools), null),
+    JournalError);
+  assert.notEqual(engine.journal.get("outer:a")?.ok, true, "the outer call has no recorded result");
 });
 
 test("memory engine: a replayed result that is not a tool result fails with Journal mismatch", async () => {

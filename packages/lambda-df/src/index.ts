@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createRetryStrategy, type DurableContext, type Serdes } from "@aws/durable-execution-sdk-js";
-import { parse, stringify, type Duration, type Durable, type Retry, type StepInfo } from "@minamojs/minamo";
+import { JournalError, parse, stringify, type Duration, type Durable, type Retry, type StepInfo } from "@minamojs/minamo";
 
 /** Binary-safe JSON for every scope result the core writes. Signals skip it: their sender writes plain JSON. */
 function serdes<T>(): Serdes<T> {
@@ -55,7 +55,7 @@ function wrap(context: DurableContext, id: string): Durable {
   const claim = (name: string) => {
     let names = claimed.get(context);
     if (!names) claimed.set(context, names = new Set());
-    if (names.has(name)) throw new Error(`Duplicate durable operation name: ${name}`);
+    if (names.has(name)) throw new JournalError(`Duplicate durable operation name: ${name}`);
     names.add(name);
   };
   return {
