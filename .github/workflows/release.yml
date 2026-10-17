@@ -23,7 +23,7 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
       - run: npm install -g npm@^11.5.1 # trusted publishing needs npm 11.5.1 or later
-      - run: npm ci
+      - run: npm ci --ignore-scripts # dependency install scripts never run with this job's permissions
       - name: Check tag matches every package version
         run: |
           for package in packages/*/; do
