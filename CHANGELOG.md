@@ -2,6 +2,10 @@
 
 All packages (`@minamojs/minamo`, `@minamojs/lambda-df`) share one version.
 
+## Unreleased
+
+- `@minamojs/lambda-df`: a step result can be up to 1 MB, Lambda's new limit per durable operation (was 256 KB). The README states Lambda's new limit of 30,000 operations per execution (was 3,000).
+
 ## 0.1.0-alpha.1 (2026-09-25)
 
 - `@minamojs/lambda-df`: `signal` no longer retries a failing `publish` with the SDK's default retry strategy (6 attempts); it runs once, as on every engine (#1).

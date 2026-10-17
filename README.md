@@ -133,7 +133,7 @@ const result = await running;
 
 - **At-least-once.** A tool can run again if the process stops after its side effect and before its result is recorded. Use `idempotencyKey` with external APIs.
 - **Determinism.** Code outside steps runs again on every replay. It must make the same durable calls in the same order.
-- **Lambda quotas.** An execution can have up to 3,000 operations and up to 100 MB of checkpoint data in total. Each step result, such as the events of one model call, can be up to 256 KB; `@minamojs/lambda-df` fails a larger step with an error that names it. Split long conversations across executions. Invoke a published version or alias, so that replays run the same code.
+- **Lambda quotas.** An execution can have up to 30,000 operations and up to 100 MB of checkpoint data in total. Each step result, such as the events of one model call, can be up to 1 MB; `@minamojs/lambda-df` fails a larger step with an error that names it. minamo checks only step results, because the SDK re-runs a scope with a large result on replay and the service rejects a large signal payload from its sender. Split long conversations across executions. Invoke a published version or alias, so that replays run the same code.
 
 ## Design
 
