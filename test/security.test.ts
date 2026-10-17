@@ -151,6 +151,21 @@ test("Lambda engine: idempotency keys differ for a reused call ID and a nested r
   }
 });
 
+test("Lambda engine: call IDs that differ only in a lone surrogate get different idempotency keys", async t => {
+  await LocalDurableTestRunner.setupTestEnvironment({ skipTime: false });
+  t.after(() => LocalDurableTestRunner.teardownTestEnvironment());
+  const tools: Record<string, Tool> = { key: { run: async (_input, { idempotencyKey }) => idempotencyKey } };
+  const calls: ToolCall[] = [{ id: "x\uD800", name: "key", input: {} }, { id: "x\uDC00", name: "key", input: {} }];
+  const execution = await new LocalDurableTestRunner({
+    handlerFunction: withDurableExecution(async (_event: unknown, context) =>
+      (await runTools(lambda(context), "tools-1", calls, tools)).map(result => result.status === "ok" && result.output)),
+  }).run({ payload: {} });
+
+  assert.equal(execution.getStatus(), "SUCCEEDED");
+  const [first, second] = execution.getResult() as string[];
+  assert.notEqual(first, second);
+});
+
 test("Lambda engine: a repeated operation name in one scope fails the execution, even through a second wrapper", async t => {
   await LocalDurableTestRunner.setupTestEnvironment({ skipTime: false });
   t.after(() => LocalDurableTestRunner.teardownTestEnvironment());

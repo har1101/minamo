@@ -52,9 +52,9 @@ export function lambda(context: DurableContext): Durable {
 /** Operation IDs come from call order, which the core keeps fixed. */
 function wrap(context: DurableContext, id: string): Durable {
   // The SDK accepts a repeated name. minamo rejects it, as name-keyed engines must: unique names keep child ids unique.
+  const names = claimed.get(context) ?? new Set();
+  claimed.set(context, names);
   const claim = (name: string) => {
-    let names = claimed.get(context);
-    if (!names) claimed.set(context, names = new Set());
     if (names.has(name)) throw new JournalError(`Duplicate durable operation name: ${name}`);
     names.add(name);
   };
@@ -71,8 +71,9 @@ function wrap(context: DurableContext, id: string): Durable {
     },
     async scope<T>(name: string, fn: (child: Durable) => Promise<T>) {
       claim(name);
-      // A fixed-length parent id makes `id + name` unambiguous without a separator.
-      return context.runInChildContext(name, child => fn(wrap(child, digest(id + name))), { serdes: serdes<T>() });
+      // A fixed-length parent id keeps this unambiguous. JSON.stringify escapes lone surrogates, which UTF-8 would
+      // turn into one replacement character, so names that `claim` tells apart never share an id.
+      return context.runInChildContext(name, child => fn(wrap(child, digest(id + JSON.stringify(name)))), { serdes: serdes<T>() });
     },
     async signal(name: string, publish: (token: string) => Promise<void>, options?: { timeout?: Duration }) {
       claim(name);
