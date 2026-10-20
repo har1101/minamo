@@ -5,22 +5,28 @@
   "workspaces": [
     "packages/core",
     "packages/lambda-df",
+    "packages/bedrock",
+    "packages/dynamodb",
     "examples/lambda-bedrock"
   ],
   "scripts": {
-    "build": "npm run build -w @minamojs/minamo -w @minamojs/lambda-df",
+    "build": "npm run build -w @minamojs/minamo -w @minamojs/lambda-df -w @minamojs/bedrock -w @minamojs/dynamodb",
     "typecheck": "tsc --noEmit && npm run typecheck -w minamo-example-lambda-bedrock",
     "test": "node --import tsx --test test/*.test.ts",
-    "pack:check": "npm pack --dry-run -w @minamojs/minamo -w @minamojs/lambda-df"
+    "pack:check": "npm pack --dry-run -w @minamojs/minamo -w @minamojs/lambda-df -w @minamojs/bedrock -w @minamojs/dynamodb"
   },
   "engines": {
     "node": ">=22"
   },
   "devDependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.1153.0",
+    "@aws-sdk/client-dynamodb": "^3.1153.0",
+    "@aws-sdk/client-lambda": "^3.1153.0",
     "@aws/durable-execution-sdk-js": "^2.4.0",
     "@aws/durable-execution-sdk-js-testing": "^1.1.4",
     "@types/node": "^26.6.2",
     "tsx": "^4.23.15",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "zod": "^4.6.7"
   }
 }

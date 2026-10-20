@@ -1,6 +1,21 @@
 # Changelog
 
-All packages (`@minamojs/minamo`, `@minamojs/lambda-df`) share one version.
+All packages (`@minamojs/minamo`, `@minamojs/lambda-df`, `@minamojs/bedrock`, `@minamojs/dynamodb`) share one version.
+
+## 0.1.0-alpha.2 (2026-10-20)
+
+minamo becomes a small durable agent runner: the L0/L1 API (`Durable`, `model()`, `runTools()`) stays as it is, with an L2 API on top. Design: [`docs/agent-api.ja.md`](./docs/agent-api.ja.md).
+
+- `@minamojs/minamo`: `agent()` runs the model/tool loop as durable operations (`<key>` scope, `model-<turn>` steps, `tools-<turn>:<callId>` scopes). `run()` needs a `key`, takes `history` or `conversation`, and returns `{ output, messages, newMessages, turns, finish, historyUpTo? }`. `output` (Standard Schema) adds a `final_result` tool; a `final_result` mixed with other tools runs them and asks again.
+- `@minamojs/minamo`: `tool()` takes a Standard Schema (zod 4.2+, ArkType; others with `jsonSchema`) for validation and the model's JSON Schema. Invalid input goes back to the model. `approval` (`when`, `timeout`, `request`) waits for a human before `run`; `workflow` tools get `ask()`. Every human request is a `$human:<name>` scope with a `request` step (the public summary) and a `wait` signal. Denied, expired, invalid answers, and failed notifications become distinct tool errors.
+- `@minamojs/minamo`: a minimal message format (`text`, `tool_call`, `tool_result`), the `Model` contract, `Hooks` (`onHumanRequest`, `onEvent` with `AgentEvent`), `requestIdOf`/`parseRequestId`, `HistoryStore` with `memoryHistory()`, `HistoryConflictError`, `HistoryTooLargeError`, `SignalTimeoutError`, and exported `defaultModelRetry`/`defaultToolRetry`.
+- `@minamojs/minamo/memory`: `MemoryEngine.pending()` waits for the execution to suspend and lists unanswered signals; `expire(token)` times one out.
+- `@minamojs/minamo/testing` (new): `fakeModel(script)` and `MemoryEngine`.
+- `@minamojs/lambda-df`: `handle(agent, { prompt, onHumanRequest, ... })` and `handle(fn)` wrap `withDurableExecution`. A signal timeout rejects with `SignalTimeoutError`. The step size check follows the new 1 MB checkpoint limit (checked as 1,000,000 bytes).
+- `@minamojs/lambda-df/callbacks` (new, optional peer `@aws-sdk/client-lambda`): `callbacks()` answers human requests by `requestId` from the execution's history, with no store of pending requests: `pending(executionArn)`, `approve`, `reject`, `answer`, typed `sent`/`closed`/`unknown` results, and `RequestLookupError`.
+- `@minamojs/bedrock` (new): `bedrock(modelId)`, a streaming Converse `Model`.
+- `@minamojs/dynamodb` (new): `dynamoHistory({ client, table })`, a `HistoryStore` with consistent reads and conditional, idempotent appends.
+- `examples/lambda-bedrock`: rewritten with `agent()`; the smoke test answers through `callbacks()`.
 
 ## 0.1.0-alpha.1 (2026-09-25)
 

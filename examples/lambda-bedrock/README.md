@@ -1,10 +1,11 @@
 # Example: durable support agent on Lambda + Bedrock
 
-A customer-support agent that runs on AWS Lambda durable functions and calls Amazon Bedrock Converse directly, with no agent framework. The whole agent is [`src/handler.ts`](./src/handler.ts).
+A customer-support agent that runs on AWS Lambda durable functions and calls Amazon Bedrock Converse, written with minamo's `agent()` and `tool()`. The whole agent is [`src/handler.ts`](./src/handler.ts).
 
 - `get_weather`: a plain tool. It fails its first attempt with `RetryableError`, so the retried step shows up in the history.
-- `issue_refund`: a workflow tool. It waits for a human approval with `durable.signal` (up to 1 hour), then runs the refund as its own step with the idempotency key.
+- `issue_refund`: a tool with `approval`. minamo records the request's public summary, waits for a human (up to 1 hour), and runs the refund only after `{ approved: true }`. The refund gets an idempotency key.
 - While it waits for approval, the Lambda invocation ends. The answer starts a new invocation, which replays the recorded model calls and tool calls instead of running them again.
+- Nothing stores the pending approval: the smoke test finds it with `callbacks().pending(executionArn)` and answers it by `requestId`.
 
 ## Requirements
 
@@ -23,11 +24,14 @@ AWS_REGION=us-east-1 npm run smoke -- reject
 
 `deploy` uses only the AWS CLI. CloudFormation runs the SAM transform, so the SAM CLI is not needed. It creates the bucket `minamo-artifacts-<account>-<region>` for the code package unless you set `ARTIFACT_BUCKET`. Set `STACK_NAME` or `BEDROCK_MODEL_ID` to override the defaults.
 
-To answer an approval yourself, find the `approval_requested` log line (it has the token) and run:
+The smoke test needs `lambda:GetDurableExecutionHistory` and `lambda:SendDurableExecutionCallbackSuccess` on the function, in addition to invoking it.
+
+To answer an approval yourself, find the `approval_requested` log line (it has the `requestId`) and run:
 
 ```bash
-aws lambda send-durable-execution-callback-success --callback-id <token> \
-  --result '{"approved":true,"reviewer":"me"}' --cli-binary-format raw-in-base64-out
+node --input-type=module -e '
+import { callbacks } from "@minamojs/lambda-df/callbacks";
+console.log(await callbacks().approve(process.argv[1], { reason: "me" }));' '<requestId>'
 ```
 
 ## Clean up

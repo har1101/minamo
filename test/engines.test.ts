@@ -172,14 +172,14 @@ test("Lambda engine: a failing signal publish fails the execution instead of ret
   assert.equal(published, 1);
 });
 
-test("Lambda engine: a model call larger than the 256 KB step limit fails with a clear error", async t => {
+test("Lambda engine: a model call larger than the 1 MB step limit fails with a clear error", async t => {
   await LocalDurableTestRunner.setupTestEnvironment({ skipTime: true });
   t.after(() => LocalDurableTestRunner.teardownTestEnvironment());
   let calls = 0;
   const call = async function* () {
     calls++;
-    yield "x".repeat(200 * 1024);
-    yield "é".repeat(30 * 1024); // 2 bytes each in UTF-8: over the limit in bytes, not in characters
+    yield "x".repeat(900_000);
+    yield "é".repeat(60_000); // 2 bytes each in UTF-8: over the limit in bytes, not in characters
   };
   // Even a policy that retries every error must not redo a model call whose result can never be recorded.
   const handler = withDurableExecution(async (_event: unknown, context) => model(lambda(context), "model-1", call, { retry: { maxAttempts: 3 } }));
