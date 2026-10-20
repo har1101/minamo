@@ -1,0 +1,44 @@
+{
+  "name": "@minamojs/bedrock",
+  "version": "0.1.0-alpha.2",
+  "description": "Amazon Bedrock Converse model adapter for minamo, the durable AI agent runner",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "sideEffects": false,
+  "peerDependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.1139.0",
+    "@minamojs/minamo": "^0.1.0-alpha.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/har1101/minamo.git",
+    "directory": "packages/bedrock"
+  },
+  "homepage": "https://github.com/har1101/minamo#readme",
+  "bugs": "https://github.com/har1101/minamo/issues",
+  "keywords": [
+    "ai-agents",
+    "durable-execution",
+    "amazon-bedrock",
+    "agent-loop"
+  ],
+  "author": "har1101",
+  "license": "MIT"
+}

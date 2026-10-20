@@ -1,0 +1,44 @@
+{
+  "name": "@minamojs/dynamodb",
+  "version": "0.1.0-alpha.2",
+  "description": "Amazon DynamoDB conversation history store for minamo, the durable AI agent runner",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "sideEffects": false,
+  "peerDependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1139.0",
+    "@minamojs/minamo": "^0.1.0-alpha.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/har1101/minamo.git",
+    "directory": "packages/dynamodb"
+  },
+  "homepage": "https://github.com/har1101/minamo#readme",
+  "bugs": "https://github.com/har1101/minamo/issues",
+  "keywords": [
+    "ai-agents",
+    "durable-execution",
+    "dynamodb",
+    "conversation-history"
+  ],
+  "author": "har1101",
+  "license": "MIT"
+}

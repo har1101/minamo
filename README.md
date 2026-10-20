@@ -4,140 +4,160 @@
 
 > **水面 (minamo)**: the surface of water. Calm on top, whatever runs underneath.
 
-A tiny, dependency-free core for durable AI agent loops on [AWS Lambda durable functions](https://docs.aws.amazon.com/lambda/latest/dg/durable-functions.html).
+A small, dependency-free durable agent runner for [AWS Lambda durable functions](https://docs.aws.amazon.com/lambda/latest/dg/durable-functions.html).
 
-Write your agent loop as plain TypeScript. minamo records each model call and each tool call as a durable operation, so a crash, a redeploy, or a week-long wait for human approval resumes from the last completed call instead of starting over and paying for the same tokens again.
+Declare an agent and its tools. minamo runs the model/tool loop and records each model call and each tool call as a durable operation, so a crash, a redeploy, or a week-long wait for human approval resumes from the last completed call instead of starting over and paying for the same tokens again. Human approval is one line on the tool, and the answering side needs no database: the execution itself knows what is waiting.
 
 > [!WARNING]
-> Experimental alpha (`0.1.0-alpha.1`). The API will change.
+> Experimental alpha. The API will change.
 
-- **No dependencies.** The core uses only Web standard APIs: no `node:` imports, no `Buffer`, no `AsyncLocalStorage`. It is under 2 KB minified and about 1 KB gzipped.
-- **Bring your own loop and model.** minamo does not define a message format. It records whatever your model stream yields.
-- **Engine adapters, not engine lock-in.** The core talks to a three-operation `Durable` interface. `@minamojs/lambda-df` implements it with the Lambda durable execution SDK. Cloudflare Workflows is the candidate for a second engine.
+- **No dependencies in the core.** Web standard APIs only: no `node:` imports, no `Buffer`, no `AsyncLocalStorage`. About 10 KB minified, 4 KB gzipped.
+- **Schemas you already use.** Tool inputs and structured output take a [Standard Schema](https://standardschema.dev) (zod 4.2+, ArkType; others with a JSON Schema next to them). minamo validates the model's input and derives the JSON Schema the model sees.
+- **Replay stays out of your code.** Operation names, idempotency keys, and replay-safe history are minamo's job. You write the tools.
+- **Adapters, not lock-in.** The core talks to a three-operation `Durable` interface. `@minamojs/lambda-df` implements it on Lambda; providers plug in through a small `Model` contract.
 
 ## Install
 
 ```bash
-npm install @minamojs/minamo@alpha @minamojs/lambda-df@alpha @aws/durable-execution-sdk-js
+npm install @minamojs/minamo@alpha @minamojs/lambda-df@alpha @minamojs/bedrock@alpha @aws/durable-execution-sdk-js @aws-sdk/client-bedrock-runtime zod
 ```
 
 Requires Node.js 22 or later.
 
 | Package | Contents |
 | --- | --- |
-| `@minamojs/minamo` | The core (`Durable`, `model`, `runTools`, `Retry`, codec) and `@minamojs/minamo/memory`, an engine for tests. No dependencies. |
-| `@minamojs/lambda-df` | The AWS Lambda durable functions engine. Peer dependency: `@aws/durable-execution-sdk-js` 2.x. |
+| `@minamojs/minamo` | `agent()`, `tool()`, messages, the `Model` and `HistoryStore` contracts, and the lower-level `Durable`, `model()`, `runTools()`. `/memory`: an engine for tests. `/testing`: `fakeModel()`. No dependencies. |
+| `@minamojs/lambda-df` | The Lambda durable functions engine and `handle()`. `/callbacks`: answer human requests by `requestId` (optional peer: `@aws-sdk/client-lambda`). |
+| `@minamojs/bedrock` | `bedrock(modelId)`: Amazon Bedrock Converse streaming. Peer: `@aws-sdk/client-bedrock-runtime`. |
+| `@minamojs/dynamodb` | `dynamoHistory()`: conversation history in one DynamoDB table. Peer: `@aws-sdk/client-dynamodb`. Optional. |
 
 ## Example
 
 ```ts
-import { withDurableExecution } from "@aws/durable-execution-sdk-js";
-import { model, RetryableError, runTools, type Durable, type Tool } from "@minamojs/minamo";
-import { lambda } from "@minamojs/lambda-df";
+import { agent, RetryableError, tool } from "@minamojs/minamo";
+import { bedrock } from "@minamojs/bedrock";
+import { handle } from "@minamojs/lambda-df";
+import { z } from "zod";
 
-const tools: Record<string, Tool> = {
-  weather: {
-    run: async ({ city }: { city: string }) => {
-      const response = await getWeather(city);
-      if (response.status === 503) throw new RetryableError("weather API unavailable"); // retried
-      return response.forecast; // any other throw becomes an error result for the model
-    },
+const support = agent({
+  name: "support",
+  model: bedrock("us.anthropic.claude-haiku-4-5-20251001-v1:0"),
+  instructions: "You are a customer support agent for an online shop.",
+  tools: {
+    get_weather: tool({
+      description: "Weather forecast for a city, used to plan a redelivery.",
+      input: z.object({ city: z.string() }),
+      run: async ({ city }) => {
+        const response = await weather.forecast(city);
+        if (response.status === 503) throw new RetryableError("weather API unavailable"); // retried
+        return response.body; // any other throw becomes an error result for the model
+      },
+    }),
+    issue_refund: tool({
+      description: "Refunds an order after a human approves it.",
+      input: z.object({ orderId: z.string(), amountYen: z.number().positive() }),
+      approval: { when: ({ amountYen }) => amountYen >= 10_000, timeout: { hours: 1 } },
+      run: async (input, { idempotencyKey }) => payments.refund({ ...input, idempotencyKey }),
+    }),
   },
-  refund: {
-    // Workflow tools may use durable operations: here, wait (without compute cost) until a human answers.
-    workflow: async ({ orderId }: { orderId: string }, { durable, idempotencyKey }) => {
-      const { approved } = await durable.signal<{ approved: boolean }>("approval", token => notifyReviewer(orderId, token));
-      if (!approved) return { status: "rejected" };
-      return durable.step("refund", () => payments.refund(orderId, { idempotencyKey }));
-    },
-  },
-};
+});
 
-async function agent(durable: Durable, prompt: string) {
-  const messages: Message[] = [{ role: "user", content: prompt }];
-  for (let turn = 1; turn <= 10; turn++) {
-    // One durable step per model call: on replay, the recorded events come back without a new request.
-    const events = await model(durable, `model-${turn}`, () => provider.stream(messages));
-    const calls = events.flatMap(event => event.type === "tool_call" ? [event.call] : []);
-    messages.push({ role: "assistant", content: events });
-    if (calls.length === 0) return events;
-    // Tool calls run concurrently; each one is journaled on its own.
-    messages.push({ role: "tool", content: await runTools(durable, `tools-${turn}`, calls, tools) });
-  }
-  throw new Error("Too many turns");
-}
-
-export const handler = withDurableExecution(async (event: { prompt: string }, context) => agent(lambda(context), event.prompt));
+export const handler = handle(support, {
+  prompt: (event: { prompt: string }) => event.prompt,
+  onHumanRequest: request => slack.notify(request.summary), // requestId and what to show; the token stays on the server
+});
 ```
 
-`provider`, `Message`, `getWeather`, `notifyReviewer`, and `payments` are your code. This example is type-checked in [`test/readme-example.ts`](./test/readme-example.ts).
+And the approver's side, in any HTTP framework:
 
-For a complete, deployable version with Amazon Bedrock Converse, see [examples/lambda-bedrock](./examples/lambda-bedrock).
+```ts
+import { callbacks } from "@minamojs/lambda-df/callbacks";
 
-## API
+const answers = callbacks();
+await answers.pending(executionArn);                     // [{ requestId, summary }] waiting now
+await answers.approve(requestId, { reason: "looks fine" }); // { status: "sent" | "closed" | "unknown" }
+```
 
-### `Durable`
+`weather`, `payments`, and `slack` are your code. This example is type-checked in [`test/readme-example.ts`](./test/readme-example.ts). For a deployable version with a smoke test, see [examples/lambda-bedrock](./examples/lambda-bedrock).
 
-The engine interface. Adapters implement it; you pass it around.
+## Agents
 
-| Member | Meaning |
-| --- | --- |
-| `step(name, fn, { retry }?)` | Runs `fn` and records its result. Without `retry` it runs once; with `retry` it runs again for errors that `retry.when` accepts. On replay, returns the recorded result without running `fn`. `fn` must not use durable operations. |
-| `scope(name, fn)` | Runs `fn` with a child `Durable` that may use durable operations. A completed scope returns its recorded result. |
-| `signal(name, publish, { timeout }?)` | Suspends until someone completes the token that `publish` receives. `publish` runs once, like a step without `retry`. On Lambda this is `waitForCallback`, and the function does not run while it waits. |
-| `executionId` | Stable across replays and resumes. |
+`agent({ name, model, instructions?, tools?, output?, maxTurns? = 10 })` returns an agent. `handle(agent, options)` runs it once per durable execution with `agent.name` as the run key. To compose, run it yourself inside `handle(async (event, durable) => ...)`:
 
-Names must be unique within a scope and deterministic: build them from your input and from recorded results, never from time or randomness.
+```ts
+const result = await support.run(durable, { key: "support", prompt, history }, { onHumanRequest, onEvent });
+// { output, messages, newMessages, turns, finish: { reason, usage? }, historyUpTo? }
+```
 
-### `model(durable, name, call, options?)`
+- `key` names the run's scope. Make it unique within the execution and never derive it from time or randomness.
+- `history` (earlier `Message`s) or `conversation: { id, store }` (a `HistoryStore`, see below). `newMessages` is valid as the next run's `history`.
+- `output`: a Standard Schema for structured output. minamo adds a `final_result` tool. If the model calls it together with other tools, the other tools run and `final_result` is asked again.
+- Operation tree: `<key>` scope → `model-<turn>` steps and `tools-<turn>:<callId>` scopes (opened in call order) → `run` step, or the workflow's own operations.
 
-Runs one model call as one step. `call` returns an async iterable of events (any JSON-compatible type). The step records every event, and the function returns the array. By default the step is attempted up to 4 times for throttling, service-unavailable and internal-server errors, timeouts, and dropped connections. Any other error fails the call at once. `options.onEvent` receives events live while the step runs, for streaming to a UI. These live events are provisional: a retried attempt streams again.
+## Tools
 
-### `runTools(durable, turn, calls, tools)`
+`tool({ description, input, approval?, retry?, run })` or `tool({ description, input, approval?, workflow })`.
 
-Runs one turn's tool calls concurrently and returns their results in call order. Each call gets its own scope named `<turn>:<call id>`, opened in call order before any tool starts, so the order in which tools finish never changes the journal.
+- `input` is validated outside any step, so its refinements and transforms must be pure. Invalid input goes back to the model as an error result.
+- `run(input, { idempotencyKey, call, attempt })` is one step. Throw `RetryableError` to retry it (default: 3 attempts); any other error is recorded once as an error result.
+- `workflow(input, { durable, ask, idempotencyKey, call })` runs in the call's scope and may use durable operations and `ask(name, { request?, schema?, timeout? })`. Names starting with `$` are reserved.
+- `idempotencyKey` is `executionId/runKey/turn/callId`: the same on every retry, replay, and resume. Pass it to external APIs.
 
-- A tool with `run` is a plain tool: one step.
-- A tool with `workflow` gets its own `Durable` and may use steps, scopes, and signals, for example approvals or sub-agents.
-- Throw `RetryableError` to retry a plain tool's step (default: 3 attempts with exponential backoff). Any other error is recorded once as an error result that the model sees. Set `retry` on a tool to change this.
-- Unknown tools, exhausted retries, and failed workflows also become error results, so the model can react.
-- Every tool receives `idempotencyKey` (`<executionId>#<call id>`), which stays the same on every retry, replay, and resume. Pass it to external APIs.
-- Every tool also receives `call`, the `ToolCall` it runs, for example to key progress events by `call.id`.
+## Human in the loop
 
-### Values
+`approval: true | { when?, timeout?, request? }` asks a human before `run`. `ask()` asks inside a workflow. Both become a `$human:<name>` scope with a `request` step (the public summary) and a `wait` signal; the function does not run while it waits.
 
-Recorded values are JSON plus `Uint8Array`, which is stored as base64. Engines apply the same codec to every step, scope, and signal.
+- `onHumanRequest(request)` receives `{ requestId, kind, tool, request, expiresAt?, summary, token, ... }` once per request (at-least-once across crashes: dedupe by `requestId`). Send only `summary` to browsers and chats.
+- Only `{ approved: true }` (the boolean) approves. Denied, expired, invalid answers, and failed notifications reach the model as distinct error results; the tool does not run.
+- `callbacks().pending(executionArn)` reads the execution's history and lists what can be answered now; `approve`, `reject`, and `answer` find the open callback for a `requestId` and send the answer. `closed` means expired, already answered, or the execution ended; `unknown` means the answer may or may not have arrived. The rules it follows are in [`packages/lambda-df/src/callbacks.ts`](./packages/lambda-df/src/callbacks.ts).
+- Authorize before calling: that the execution belongs to the caller, and that the caller may answer. `requestId` is not a secret.
+- `GetDurableExecutionHistory` allows 15 calls per second per account, one per history page. Notify with `onHumanRequest` and call `pending` on page load or refresh, not in a polling loop. For an inbox across many executions, store `requestId` and `summary` yourself (not the token) and still answer with `approve(requestId)`.
 
-## Engines
+## Conversation history
 
-| Import | Engine | Status |
-| --- | --- | --- |
-| `@minamojs/lambda-df` | AWS Lambda durable functions (`@aws/durable-execution-sdk-js` 2.x) | Works, on deployed Lambda and with `LocalDurableTestRunner` |
-| `@minamojs/minamo/memory` | In-memory engine for tests | Works |
-| — | Cloudflare Workflows | Candidate |
+```ts
+interface HistoryStore {
+  head(conversationId: string): Promise<number>;
+  read(conversationId: string, upTo: number): Promise<Message[]>;
+  append(conversationId: string, seq: number, messages: Message[], writeId: string): Promise<void>;
+}
+```
+
+With `conversation: { id, store }`, a run records only the history position (`history-head`), reads runs `1..upTo` outside steps, and appends its own messages as run `upTo + 1` (`history-append`) with an idempotent `writeId`. A second run that appends the same `seq` gets `HistoryConflictError`; it does not undo that run's side effects, so allow one run per conversation at a time. `memoryHistory()` is in the core; `dynamoHistory({ client, table })` is in `@minamojs/dynamodb`.
 
 ## Testing without AWS
 
-`MemoryEngine` replays like a real engine: each invocation runs your handler from the top and returns recorded results. `crash` stops an invocation right after an operation is recorded, so you can test recovery at every point:
-
 ```ts
-import { MemoryEngine } from "@minamojs/minamo/memory";
+import { fakeModel, MemoryEngine } from "@minamojs/minamo/testing";
 
-const engine = new MemoryEngine({ crash: () => true }); // crash after every recorded operation
-const running = engine.run((durable, prompt: string) => agent(durable, prompt), "hello");
-engine.complete(token, { approved: true }); // answer a signal; the token is what `publish` received
+const engine = new MemoryEngine({ crash: () => true }); // optional: crash after every recorded operation
+const running = engine.run(d => support.run(d, { key: "t", prompt: "refund A-1" }, { onHumanRequest: async () => {} }), null);
+const [request] = await engine.pending(); // signals waiting for an answer
+engine.complete(request.token, { approved: true }); // or engine.expire(request.token)
 const result = await running;
 ```
 
+`MemoryEngine` replays like a real engine: each invocation runs the handler from the top and returns recorded results. `fakeModel([...])` plays one scripted response per real model call. Timeouts on Lambda and large scope results are covered by tests with the SDK's `LocalDurableTestRunner`.
+
+## Lower level
+
+The agent runner is built on three exported pieces you can use directly:
+
+- `Durable`: `step(name, fn, { retry }?)`, `scope(name, fn)`, `signal(name, publish, { timeout }?)` (rejects with `SignalTimeoutError`), and `executionId`. Names must be unique within a scope and deterministic.
+- `model(durable, name, call, options?)`: one model call as one step that records every streamed event (default retry: `defaultModelRetry`).
+- `runTools(durable, turn, calls, tools)`: one turn's tool calls, concurrently, one scope each.
+
+Recorded values are JSON plus `Uint8Array` (stored as base64).
+
 ## Guarantees and limits
 
-- **At-least-once.** A tool can run again if the process stops after its side effect and before its result is recorded. Use `idempotencyKey` with external APIs.
-- **Determinism.** Code outside steps runs again on every replay. It must make the same durable calls in the same order.
-- **Lambda quotas.** An execution can have up to 3,000 operations and up to 100 MB of checkpoint data in total. Each step result, such as the events of one model call, can be up to 256 KB; `@minamojs/lambda-df` fails a larger step with an error that names it. Split long conversations across executions. Invoke a published version or alias, so that replays run the same code.
+- **At-least-once.** A tool can run again if the process stops after its side effect and before its result is recorded. Use `idempotencyKey`. `onHumanRequest` and `onEvent` are at-least-once too.
+- **Determinism.** Code outside steps runs again on every replay: schema validation, `approval.when`, `approval.request`, and `output` validation must be pure.
+- **Lambda quotas.** Up to 30,000 operations and 100 MB of checkpoint data per execution, and 1 MB per operation; `@minamojs/lambda-df` fails a larger step with an error that names it. Keep tool results small and put large data elsewhere with a reference. Invoke a published version or alias, so that replays run the same code.
 
 ## Design
 
-See [docs/design.ja.md](./docs/design.ja.md) (Japanese).
+See [docs/agent-api.ja.md](./docs/agent-api.ja.md) and [docs/design.ja.md](./docs/design.ja.md) (Japanese).
 
 ## License
 

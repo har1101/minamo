@@ -1,5 +1,10 @@
-import { createRetryStrategy, type DurableContext, type Serdes } from "@aws/durable-execution-sdk-js";
-import { parse, stringify, type Duration, type Durable, type Retry, type StepInfo } from "@minamojs/minamo";
+import {
+  CallbackTimeoutError, createRetryStrategy, withDurableExecution, type DurableContext, type DurableLambdaHandler, type Serdes,
+} from "@aws/durable-execution-sdk-js";
+import {
+  parse, SignalTimeoutError, stringify,
+  type Agent, type Duration, type Durable, type Hooks, type Message, type HistoryStore, type Retry, type RunResult, type StepInfo,
+} from "@minamojs/minamo";
 
 /** Binary-safe JSON for every scope result the core writes. */
 function serdes<T>(): Serdes<T> {
@@ -12,8 +17,11 @@ function serdes<T>(): Serdes<T> {
 /** Step results are serialized inside the step (see {@link encodeStep}), so the checkpoint stores the text as is. */
 const passthrough: Serdes<string | undefined> = { serialize: async value => value, deserialize: async data => data };
 
-/** Lambda caps a STEP checkpoint payload at 256 KB (OperationUpdate `Payload`). */
-const STEP_PAYLOAD_LIMIT = 256 * 1024;
+/**
+ * Lambda caps a checkpoint payload at 1 MB (raised from 256 KB on 2026-10-13). AWS does not say whether that is
+ * 10^6 or 2^20 bytes, so this takes the smaller one: failing slightly early beats failing after the work is done.
+ */
+const STEP_PAYLOAD_LIMIT = 1_000_000;
 
 /** Deterministic, so never retried: another attempt would redo the work (e.g. a model call) and fail the same way. */
 class StepTooLargeError extends Error {
@@ -53,13 +61,49 @@ export function lambda(context: DurableContext): Durable {
       return Promise.resolve(context.runInChildContext(name, child => fn(lambda(child)), { serdes: serdes<T>() }));
     },
     async signal<T>(name: string, publish: (token: string) => Promise<void>, options?: { timeout?: Duration }) {
-      // `publish` runs as the SDK's submitter step, which would otherwise get the SDK's default retries.
-      const raw = await context.waitForCallback(name, token => publish(token), {
-        retryStrategy: noRetry, ...(options?.timeout && { timeout: seconds(options.timeout) }),
-      });
+      let raw: string | undefined;
+      try {
+        // `publish` runs as the SDK's submitter step, which would otherwise get the SDK's default retries.
+        raw = await context.waitForCallback(name, token => publish(token), {
+          retryStrategy: noRetry, ...(options?.timeout && { timeout: seconds(options.timeout) }),
+        });
+      } catch (error) {
+        if (error instanceof CallbackTimeoutError) throw new SignalTimeoutError(error.message);
+        throw error;
+      }
       return parse<T>(raw || "null");
     },
   };
+}
+
+export type HandleOptions<E> = Hooks & {
+  /** The user prompt of this execution. */
+  prompt: (event: E) => string;
+  /** Run key. Default: the agent's name. */
+  key?: string;
+} & (
+  | { history?: (event: E) => readonly Message[]; conversation?: never }
+  | { conversation: (event: E) => { id: string; store: HistoryStore }; history?: never }
+);
+
+/** What `handle(agent)` returns from the execution: the run result without `messages`, which would repeat the history. */
+export type HandleResult<O> = Omit<RunResult<O>, "messages">;
+
+/**
+ * Lambda handler for one agent run per durable execution, or for your own function of `Durable`.
+ * Deploy it with `DurableConfig` and invoke a published version or alias.
+ */
+export function handle<E, O>(agent: Agent<O>, options: HandleOptions<E>): DurableLambdaHandler;
+export function handle<E, R>(fn: (event: E, durable: Durable) => Promise<R>): DurableLambdaHandler;
+export function handle<E>(target: Agent<unknown> | ((event: E, durable: Durable) => Promise<unknown>), options?: HandleOptions<E>): DurableLambdaHandler {
+  if (typeof target === "function") return withDurableExecution((event: E, context: DurableContext) => target(event, lambda(context)));
+  const { prompt, key = target.name, history, conversation, onHumanRequest, onEvent } = options!;
+  return withDurableExecution(async (event: E, context: DurableContext): Promise<HandleResult<unknown>> => {
+    const { messages: _, ...result } = await target.run(lambda(context), {
+      key, prompt: prompt(event), ...(conversation ? { conversation: conversation(event) } : { history: history?.(event) }),
+    }, { onHumanRequest, onEvent });
+    return result;
+  });
 }
 
 function retryStrategy({ when, maxAttempts, initialDelay, maxDelay, backoffRate }: Retry) {

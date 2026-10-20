@@ -1,12 +1,16 @@
 {
   "name": "@minamojs/lambda-df",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "description": "AWS Lambda durable functions engine for minamo, the durable AI agent loop core",
   "type": "module",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./callbacks": {
+      "types": "./dist/callbacks.d.ts",
+      "import": "./dist/callbacks.js"
     }
   },
   "files": [
@@ -24,7 +28,13 @@
   "sideEffects": false,
   "peerDependencies": {
     "@aws/durable-execution-sdk-js": ">=2.4.0 <3",
-    "@minamojs/minamo": "^0.1.0-alpha.1"
+    "@minamojs/minamo": "^0.1.0-alpha.2",
+    "@aws-sdk/client-lambda": "^3.1139.0"
+  },
+  "peerDependenciesMeta": {
+    "@aws-sdk/client-lambda": {
+      "optional": true
+    }
   },
   "repository": {
     "type": "git",

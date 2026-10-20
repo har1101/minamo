@@ -6,7 +6,11 @@
     "paths": {
       "@minamojs/minamo": ["./packages/core/src/index.ts"],
       "@minamojs/minamo/memory": ["./packages/core/src/memory.ts"],
-      "@minamojs/lambda-df": ["./packages/lambda-df/src/index.ts"]
+      "@minamojs/minamo/testing": ["./packages/core/src/testing.ts"],
+      "@minamojs/lambda-df": ["./packages/lambda-df/src/index.ts"],
+      "@minamojs/lambda-df/callbacks": ["./packages/lambda-df/src/callbacks.ts"],
+      "@minamojs/bedrock": ["./packages/bedrock/src/index.ts"],
+      "@minamojs/dynamodb": ["./packages/dynamodb/src/index.ts"]
     }
   },
   "include": ["packages/*/src/**/*.ts", "test/**/*.ts"]
